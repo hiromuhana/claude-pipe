@@ -1,8 +1,6 @@
 import {
-  unstable_v2_createSession,
-  unstable_v2_resumeSession,
+  query,
   type SDKMessage,
-  type SDKSession,
   type McpSdkServerConfigWithInstance
 } from '@anthropic-ai/claude-agent-sdk'
 
@@ -34,13 +32,12 @@ function getAssistantText(msg: SDKMessage): string {
 }
 
 /**
- * Manages Claude SDK V2 sessions and turn execution.
+ * Manages Claude SDK V1 query execution and session resume.
  *
- * Sessions are keyed by normalized conversation key (`channel:chat_id`) and persisted
- * as session IDs through `SessionStore`.
+ * Session IDs are persisted by normalized conversation key (`channel:chat_id`)
+ * and passed back via the `resume` option on subsequent turns.
  */
 export class ClaudeClient {
-  private readonly sessions = new Map<string, SDKSession>()
   private readonly mcpServer: McpSdkServerConfigWithInstance
   private readonly transcript: TranscriptLogger
   private activeToolContext: ToolContext | null = null
@@ -75,17 +72,40 @@ export class ClaudeClient {
    * Executes a single conversational turn with tool support.
    */
   async runTurn(conversationKey: string, userText: string, context: ToolContext): Promise<string> {
-    const session = this.getOrCreateSession(conversationKey)
+    const savedSession = this.store.get(conversationKey)
+    const queryOptions = {
+      model: this.config.model,
+      cwd: this.config.workspace,
+      permissionMode: 'bypassPermissions' as const,
+      allowDangerouslySkipPermissions: true,
+      systemPrompt: {
+        type: 'preset' as const,
+        preset: 'claude_code' as const,
+        append:
+          'You are microclaw. Prefer MCP tools for file/web/shell operations. ' +
+          'For normal chat replies, return direct text responses.'
+      },
+      tools: [] as string[],
+      mcpServers: {
+        microclaw: this.mcpServer
+      },
+      ...(savedSession ? { resume: savedSession.sessionId } : {})
+    }
+
+    const stream = query({
+      prompt: userText,
+      options: queryOptions
+    })
+
     let responseText = ''
-    let observedSessionId: string | undefined = this.store.get(conversationKey)?.sessionId
+    let observedSessionId: string | undefined = savedSession?.sessionId
 
     this.activeToolContext = context
 
     try {
       await this.transcript.log(conversationKey, { type: 'user', text: userText })
-      await session.send(userText)
 
-      for await (const msg of session.stream()) {
+      for await (const msg of stream) {
         const sid = extractSessionId(msg)
         if (sid) observedSessionId = sid
 
@@ -114,14 +134,6 @@ export class ClaudeClient {
         }
       }
 
-      if (!observedSessionId) {
-        try {
-          observedSessionId = session.sessionId
-        } catch {
-          // Ignore: session ID is unavailable until initialized.
-        }
-      }
-
       if (observedSessionId) {
         await this.store.set(conversationKey, observedSessionId)
       }
@@ -140,40 +152,6 @@ export class ClaudeClient {
 
   /** Closes all live sessions and releases process resources. */
   closeAll(): void {
-    for (const session of this.sessions.values()) {
-      session.close()
-    }
-    this.sessions.clear()
-  }
-
-  private getOrCreateSession(conversationKey: string): SDKSession {
-    const cached = this.sessions.get(conversationKey)
-    if (cached) return cached
-
-    const saved = this.store.get(conversationKey)
-    const baseOptions = {
-      model: this.config.model,
-      cwd: this.config.workspace,
-      permissionMode: 'bypassPermissions' as const,
-      allowDangerouslySkipPermissions: true,
-      systemPrompt: {
-        type: 'preset' as const,
-        preset: 'claude_code' as const,
-        append:
-          'You are microclaw. Prefer MCP tools for file/web/shell operations. ' +
-          'For normal chat replies, return direct text responses.'
-      },
-      tools: [] as string[],
-      mcpServers: {
-        microclaw: this.mcpServer
-      }
-    }
-
-    const session = saved
-      ? unstable_v2_resumeSession(saved.sessionId, baseOptions)
-      : unstable_v2_createSession(baseOptions)
-
-    this.sessions.set(conversationKey, session)
-    return session
+    // No-op for SDK V1 query() mode: each turn uses a fresh query stream.
   }
 }
