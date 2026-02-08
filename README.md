@@ -1,14 +1,13 @@
 # microclaw
 
-TypeScript reimplementation of nanobot core flows using Claude Agent SDK V2.
+TypeScript reimplementation of nanobot core flows using Claude Agent SDK V1.
 
 ## Current State
 
 This repository includes a working local runtime with:
-- 
 - real Telegram inbound/outbound integration (Bot API long polling)
 - real Discord inbound/outbound integration (`discord.js` gateway client)
-- Claude SDK V2 multi-turn session handling with session resume persistence
+- Claude SDK V1 turn execution with session resume persistence
 - tool calling through an in-process MCP server backed by local TypeScript tools
 - workspace boundary guardrails for file and shell tools
 - outbound response chunking for Telegram and Discord limits
@@ -25,7 +24,7 @@ This repository includes a working local runtime with:
 | Config loading/validation | Implemented | `zod` schema + `.env` mapping |
 | Session persistence | Implemented | JSON map: `conversation_key -> session_id` |
 | Agent loop | Implemented | Inbound -> Claude turn -> outbound |
-| Claude SDK V2 sessioning | Implemented | create/resume + streaming result handling |
+| Claude SDK V1 sessioning | Implemented | `query()` with `resume` + streaming result handling |
 | Tool calling | Implemented | MCP server generated from `ToolRegistry` |
 | Telegram adapter | Implemented | Long polling + sendMessage + chunking + retry |
 | Discord adapter | Implemented | Gateway message events + channel send + chunking + retry |
@@ -50,7 +49,7 @@ Telegram/Discord adapters
       AgentLoop
         |
         v
-    ClaudeClient (SDK V2 session)
+    ClaudeClient (SDK V1 query)
         |
         v
  MCP tool server (from ToolRegistry)
@@ -131,9 +130,9 @@ Applies summary prompt template for summary-like requests when enabled.
 Summary prompt template application logic and request detection heuristics.
 
 ### `/Users/mg/workspace/microclaw/src/core/claude-client.ts`
-Claude SDK V2 wrapper for:
-- session create/resume
-- per-conversation in-memory session cache
+Claude SDK V1 wrapper for:
+- per-turn `query()` execution
+- persisted `resume` usage per conversation
 - stream parsing
 - MCP tool server attachment
 - optional transcript logging
@@ -192,6 +191,7 @@ Per your requirement, implementation follows this order for each task:
 - `/Users/mg/workspace/microclaw/tests/channel-retry.test.ts`
 - `/Users/mg/workspace/microclaw/tests/transcript-logger.test.ts`
 - `/Users/mg/workspace/microclaw/tests/transcript-rotation.test.ts`
+- `/Users/mg/workspace/microclaw/tests/claude-client-v1.test.ts`
 - `/Users/mg/workspace/microclaw/tests/config.test.ts`
 - `/Users/mg/workspace/microclaw/tests/acceptance-telegram-summary.test.ts`
 - `/Users/mg/workspace/microclaw/tests/acceptance-discord-summary.test.ts`
@@ -229,7 +229,7 @@ npm run dev
 - Channel adapters reply to every text message from allowed senders.
 - If allow list is empty for a channel, all senders are allowed.
 - Model is fixed to `claude-sonnet-4-5` per PRD decision.
-- Permissions are configured to bypass checks in SDK session options, matching your v1 full-permission requirement.
+- Permissions are configured to bypass checks in SDK query options, matching your full-permission requirement.
 - Outbound sends retry once (2 attempts total) with short fixed backoff.
 
 ## Known Limitations
@@ -241,6 +241,6 @@ npm run dev
 
 ## Next Implementation Targets
 
-1. Add integration tests for Discord end-to-end summary flow.
+1. Add media/file attachment ingestion for channel messages.
 2. Add optional channel-specific formatting profiles.
 3. Add structured result modes for specific workflows (e.g., repo summary JSON).
