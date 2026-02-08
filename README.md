@@ -9,7 +9,8 @@ This repository includes a working local runtime with:
 - real Discord inbound/outbound integration (`discord.js` gateway client)
 - Claude SDK V2 multi-turn session handling with session resume persistence
 - tool calling through an in-process MCP server backed by local TypeScript tools
-- unit test suite for core runtime behavior
+- workspace boundary guardrails for file and shell tools
+- unit and acceptance-style tests
 
 ## Implemented vs Pending
 
@@ -22,7 +23,8 @@ This repository includes a working local runtime with:
 | Tool calling | Implemented | MCP server generated from `ToolRegistry` |
 | Telegram adapter | Implemented | Long polling + sendMessage |
 | Discord adapter | Implemented | Gateway message events + channel send |
-| Unit tests | Implemented | Bus, session store, allow-list, tool registry, agent loop, telegram |
+| Tool safety boundaries | Implemented | Workspace path guards for file/exec tools |
+| Acceptance harness | Implemented | Telegram summary flow test |
 | `spawn` subagents | Out of scope | Deferred by PRD |
 | cron/heartbeat | Out of scope | Deferred by PRD |
 | media ingestion | Out of scope | Text-only v1 |
@@ -88,6 +90,7 @@ Bootstraps config, session store, tools, channel manager, and agent loop.
 
 ### `/Users/mg/workspace/microclaw/src/core/agent-loop.ts`
 Main processing loop. Reads inbound events, executes one Claude turn, emits outbound response.
+Includes `processOnce()` for deterministic integration/acceptance testing.
 
 ### `/Users/mg/workspace/microclaw/src/core/claude-client.ts`
 Claude SDK V2 wrapper for:
@@ -116,13 +119,17 @@ v1 tool implementations:
 - `web_fetch`
 - `message`
 
+Guardrails:
+- File tools enforce workspace-bound paths.
+- `exec` enforces workspace-bounded `working_dir`.
+
 ## Test-First Workflow
 
-Per your requirement, implementation now follows test-first order for each task:
-1. add/adjust unit tests
+Per your requirement, implementation follows this order for each task:
+1. add or update tests first
 2. implement or refactor code
-3. run test suite
-4. run build/typecheck
+3. run tests and build
+4. commit the completed step
 
 ### Current tests
 - `/Users/mg/workspace/microclaw/tests/bus.test.ts`
@@ -131,6 +138,9 @@ Per your requirement, implementation now follows test-first order for each task:
 - `/Users/mg/workspace/microclaw/tests/tool-registry.test.ts`
 - `/Users/mg/workspace/microclaw/tests/agent-loop.test.ts`
 - `/Users/mg/workspace/microclaw/tests/telegram.test.ts`
+- `/Users/mg/workspace/microclaw/tests/discord.test.ts`
+- `/Users/mg/workspace/microclaw/tests/tool-safety.test.ts`
+- `/Users/mg/workspace/microclaw/tests/acceptance-telegram-summary.test.ts`
 
 ## Setup
 
@@ -174,6 +184,6 @@ npm run dev
 
 ## Next Implementation Targets
 
-1. Add unit tests for Discord adapter behavior with mocked gateway events.
-2. Add tool safety guardrails and workspace boundary enforcement tests.
-3. Add end-to-end acceptance harness for Telegram file-summary flow.
+1. Add stronger exec safety policy coverage (deny-pattern tests + implementation).
+2. Add response formatting controls for Telegram/Discord long outputs.
+3. Add optional transcript logging toggle for local debugging (off by default).
