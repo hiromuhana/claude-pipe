@@ -60,8 +60,13 @@ describe('acceptance: telegram summary flow', () => {
       expect.stringContaining('Request: summarize files in workspace'),
       expect.objectContaining({ channel: 'telegram', chatId: '200' })
     )
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // First call: typing indicator
+    const [typingUrl, typingInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(typingUrl).toContain('/sendChatAction')
+    expect(String(typingInit.body)).toContain('typing')
+    // Second call: sendMessage with response
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(url).toContain('/sendMessage')
     expect(String(init.body)).toContain('Workspace summary')
   })

@@ -19,6 +19,9 @@ const TELEGRAM_MESSAGE_MAX = 3800
 const SEND_RETRY_ATTEMPTS = 2
 const SEND_RETRY_BACKOFF_MS = 50
 
+/** Telegram Bot API chat actions for typing indicators. */
+type ChatAction = 'typing' | 'upload_photo' | 'upload_video' | 'upload_audio' | 'upload_document' | 'find_location' | 'record_video' | 'record_voice'
+
 /**
  * Telegram adapter using Bot API long polling.
  */
@@ -27,6 +30,8 @@ export class TelegramChannel implements Channel {
   private running = false
   private pollTask: Promise<void> | null = null
   private nextOffset = 0
+  /** Tracks chat IDs pending responses for typing indicator cleanup. */
+  private pendingTyping = new Set<string>()
 
   constructor(
     private readonly config: MicroclawConfig,
@@ -93,6 +98,41 @@ export class TelegramChannel implements Channel {
         break
       }
     }
+
+    // Clear typing indicator after response is sent
+    this.pendingTyping.delete(message.chatId)
+  }
+
+  /** Sends a chat action (typing, uploading, etc.) to Telegram. */
+  private async sendChatAction(chatId: string, action: ChatAction): Promise<void> {
+    const token = this.config.channels.telegram.token
+    const url = `https://api.telegram.org/bot${token}/sendChatAction`
+
+    try {
+      await retry(
+        async () => {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: Number(chatId),
+              action
+            })
+          })
+
+          if (!response.ok) {
+            const body = await response.text()
+            throw new Error(`telegram sendChatAction failed (${response.status}): ${body}`)
+          }
+        },
+        {
+          attempts: 1,
+          backoffMs: 0
+        }
+      )
+    } catch {
+      // Silently fail - typing indicator is non-critical
+    }
   }
 
   private async pollLoop(): Promise<void> {
@@ -139,10 +179,15 @@ export class TelegramChannel implements Channel {
       return
     }
 
+    const chatId = String(message.chat.id)
+    // Show typing indicator while agent processes the message
+    this.pendingTyping.add(chatId)
+    await this.sendChatAction(chatId, 'typing')
+
     const inbound: InboundMessage = {
       channel: 'telegram',
       senderId,
-      chatId: String(message.chat.id),
+      chatId,
       content: message.text?.trim() || '[empty message]',
       timestamp: new Date().toISOString(),
       metadata: {
