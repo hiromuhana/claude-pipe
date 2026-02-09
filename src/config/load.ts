@@ -1,6 +1,7 @@
 import { config as loadEnv } from 'dotenv'
+import * as path from 'node:path'
 
-import { readSettings, settingsExist } from './settings.js'
+import { getConfigDir, readSettings, settingsExist } from './settings.js'
 import { configSchema, type ClaudePipeConfig } from './schema.js'
 
 /** Parses comma-separated allow-list env values. */
@@ -23,6 +24,10 @@ export function loadConfig(): ClaudePipeConfig {
     'Workspace: {{workspace}}\n' +
     'Request: {{request}}\n' +
     'Provide a concise summary with key files and actionable insights.'
+
+  // Load env from ~/.claude-pipe/.env first, then local .env as a legacy fallback.
+  loadEnv({ path: path.join(getConfigDir(), '.env') })
+  loadEnv()
 
   if (settingsExist()) {
     const s = readSettings()
@@ -53,9 +58,6 @@ export function loadConfig(): ClaudePipeConfig {
       maxToolIterations: 20
     })
   }
-
-  // Legacy .env fallback
-  loadEnv()
 
   return configSchema.parse({
     model: process.env.CLAUDEPIPE_MODEL ?? '',
