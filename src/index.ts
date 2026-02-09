@@ -52,12 +52,13 @@ async function main(): Promise<void> {
   )
   registry.register(
     sessionListCommand(() => {
-      // Expose session records from the store
-      const entries: Array<{ key: string; updatedAt: string }> = []
-      for (const [key, record] of Object.entries(sessionStore.entries())) {
-        if (record) entries.push({ key, updatedAt: record.updatedAt })
+      const map = sessionStore.entries()
+      const result: Array<{ key: string; updatedAt: string }> = []
+      for (const key of Object.keys(map)) {
+        const record = map[key]
+        if (record) result.push({ key, updatedAt: record.updatedAt })
       }
-      return entries
+      return result
     })
   )
   registry.register(
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
     configGetCommand((key) => {
       if (key) {
         const val = mutableConfig[key]
-        return val !== undefined ? val : undefined
+        return val
       }
       return { model: config.model, workspace: config.workspace, ...mutableConfig }
     })

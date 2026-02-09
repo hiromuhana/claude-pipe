@@ -70,7 +70,7 @@ export class CommandHandler {
    * Handles:
    *  - `/help`                → "help"
    *  - `/session_new`         → "session_new"  (Telegram style)
-   *  - `/session new`         → "session_new"  (Discord style collapsed)
+   *  - `/session new`         → "session_new"  (two-word fallback)
    */
   private extractCommandName(text: string): string {
     // Drop the leading slash

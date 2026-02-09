@@ -9,7 +9,7 @@ import type { AgentTurnUpdate, InboundMessage, Logger } from './types.js'
  * Central message-processing loop.
  *
  * Consumes inbound chat events, executes one Claude turn, and publishes outbound replies.
- * When a {@link CommandHandler} is provided it intercepts slash-commands before they reach the LLM.
+ * When a {@link CommandHandler} is provided it intercepts slash commands before they reach the LLM.
  */
 export class AgentLoop {
   private running = false
