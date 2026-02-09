@@ -1,5 +1,7 @@
 export { CommandRegistry } from './registry.js'
 export { CommandHandler } from './handler.js'
+export { setupCommands } from './setup.js'
+export type { CommandDependencies, SetupCommandsOptions } from './setup.js'
 export type {
   CommandDefinition,
   CommandContext,
