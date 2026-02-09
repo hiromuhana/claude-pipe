@@ -58,7 +58,7 @@ export function loadConfig(): ClaudePipeConfig {
   loadEnv()
 
   return configSchema.parse({
-    model: process.env.CLAUDEPIPE_MODEL ?? 'GLM-4.7',
+    model: process.env.CLAUDEPIPE_MODEL ?? '',
     workspace: process.env.CLAUDEPIPE_WORKSPACE ?? process.cwd(),
     channels: {
       telegram: {
