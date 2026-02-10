@@ -42,13 +42,21 @@ export function loadConfig(): ClaudePipeConfig {
         telegram: {
           enabled: telegramEnabled,
           token: telegramEnabled ? s.token : '',
-          allowFrom: telegramEnabled ? s.allowFrom : []
+          allowFrom: telegramEnabled ? s.allowFrom : [],
+          webhookSecret: telegramEnabled ? (s.webhook?.secret ?? '') : ''
         },
         discord: {
           enabled: discordEnabled,
           token: discordEnabled ? s.token : '',
-          allowFrom: discordEnabled ? s.allowFrom : []
+          allowFrom: discordEnabled ? s.allowFrom : [],
+          webhookSecret: discordEnabled ? (s.webhook?.secret ?? '') : ''
         }
+      },
+      webhook: {
+        enabled: s.webhook?.enabled ?? false,
+        port: s.webhook?.port ?? 3000,
+        host: '0.0.0.0',
+        url: s.webhook?.url ?? ''
       },
       summaryPrompt: {
         enabled: true,
@@ -66,13 +74,21 @@ export function loadConfig(): ClaudePipeConfig {
       telegram: {
         enabled: process.env.CLAUDEPIPE_TELEGRAM_ENABLED === 'true',
         token: process.env.CLAUDEPIPE_TELEGRAM_TOKEN ?? '',
-        allowFrom: parseCsv(process.env.CLAUDEPIPE_TELEGRAM_ALLOW_FROM)
+        allowFrom: parseCsv(process.env.CLAUDEPIPE_TELEGRAM_ALLOW_FROM),
+        webhookSecret: process.env.CLAUDEPIPE_TELEGRAM_WEBHOOK_SECRET ?? ''
       },
       discord: {
         enabled: process.env.CLAUDEPIPE_DISCORD_ENABLED === 'true',
         token: process.env.CLAUDEPIPE_DISCORD_TOKEN ?? '',
-        allowFrom: parseCsv(process.env.CLAUDEPIPE_DISCORD_ALLOW_FROM)
+        allowFrom: parseCsv(process.env.CLAUDEPIPE_DISCORD_ALLOW_FROM),
+        webhookSecret: process.env.CLAUDEPIPE_DISCORD_WEBHOOK_SECRET ?? ''
       }
+    },
+    webhook: {
+      enabled: process.env.CLAUDEPIPE_WEBHOOK_ENABLED === 'true',
+      port: Number(process.env.CLAUDEPIPE_WEBHOOK_PORT ?? 3000),
+      host: process.env.CLAUDEPIPE_WEBHOOK_HOST ?? '0.0.0.0',
+      url: process.env.CLAUDEPIPE_WEBHOOK_URL ?? ''
     },
     summaryPrompt: {
       enabled: process.env.CLAUDEPIPE_SUMMARY_PROMPT_ENABLED !== 'false',
