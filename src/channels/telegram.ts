@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { WebSocketServer, type WebSocket } from 'ws'
+import { WebSocket, WebSocketServer } from 'ws'
 
 import type { CommandMeta } from '../commands/types.js'
 import type { ClaudePipeConfig } from '../config/schema.js'
@@ -183,7 +183,7 @@ export class TelegramChannel implements Channel {
     if (!this.wss) return
     const payload = JSON.stringify(data)
     for (const client of this.wss.clients) {
-      if (client.readyState === 1 /* WebSocket.OPEN */) {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(payload)
       }
     }
