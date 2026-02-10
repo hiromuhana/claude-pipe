@@ -1,4 +1,5 @@
 import { ChannelManager } from './channels/manager.js'
+import { setupCommands } from './commands/index.js'
 import { loadConfig } from './config/load.js'
 import { settingsExist } from './config/settings.js'
 import { AgentLoop } from './core/agent-loop.js'
@@ -29,6 +30,9 @@ async function main(): Promise<void> {
   const claude = new ClaudeClient(config, sessionStore, logger)
   const agent = new AgentLoop(bus, config, claude, logger)
   const channels = new ChannelManager(config, bus, logger)
+
+  const { handler } = setupCommands({ config, claude, sessionStore })
+  agent.setCommandHandler(handler)
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('shutdown.signal', { signal })
