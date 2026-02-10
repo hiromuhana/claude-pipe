@@ -3,8 +3,26 @@ import { z } from 'zod'
 const channelSchema = z.object({
   enabled: z.boolean(),
   token: z.string(),
-  allowFrom: z.array(z.string())
+  allowFrom: z.array(z.string()),
+  webhookSecret: z.string().default('')
 })
+
+/**
+ * Webhook server configuration for receiving updates via HTTP instead of polling/gateway.
+ */
+export const webhookSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    port: z.number().int().positive().default(3000),
+    host: z.string().default('0.0.0.0'),
+    url: z.string().default('')
+  })
+  .default({
+    enabled: false,
+    port: 3000,
+    host: '0.0.0.0',
+    url: ''
+  })
 
 /**
  * Runtime configuration schema for Claude Pipe.
@@ -16,6 +34,7 @@ export const configSchema = z.object({
     telegram: channelSchema,
     discord: channelSchema
   }),
+  webhook: webhookSchema,
   summaryPrompt: z
     .object({
       enabled: z.boolean().default(true),

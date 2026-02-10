@@ -4,27 +4,43 @@ import type { Logger } from '../core/types.js'
 import type { Channel } from './base.js'
 import { DiscordChannel } from './discord.js'
 import { TelegramChannel } from './telegram.js'
+import { WebhookServer } from './webhook-server.js'
 
 /**
  * Owns channel adapter lifecycle and outbound message dispatching.
  */
 export class ChannelManager {
   private readonly channels: Channel[]
+  private readonly telegram: TelegramChannel
+  private readonly discord: DiscordChannel
+  private webhookServer: WebhookServer | null = null
   private dispatcherRunning = false
 
   constructor(
-    config: ClaudePipeConfig,
+    private readonly config: ClaudePipeConfig,
     private readonly bus: MessageBus,
     private readonly logger: Logger
   ) {
-    this.channels = [
-      new TelegramChannel(config, bus, logger),
-      new DiscordChannel(config, bus, logger)
-    ]
+    this.telegram = new TelegramChannel(config, bus, logger)
+    this.discord = new DiscordChannel(config, bus, logger)
+    this.channels = [this.telegram, this.discord]
   }
 
   /** Starts all adapters and launches outbound dispatcher. */
   async startAll(): Promise<void> {
+    // Start webhook server if enabled
+    if (this.config.webhook.enabled) {
+      this.webhookServer = new WebhookServer(
+        this.config.webhook.port,
+        this.config.webhook.host,
+        this.logger
+      )
+
+      await this.telegram.registerWebhook(this.webhookServer)
+      await this.discord.registerWebhook(this.webhookServer)
+      await this.webhookServer.start()
+    }
+
     for (const channel of this.channels) {
       await channel.start()
     }
@@ -33,12 +49,17 @@ export class ChannelManager {
     void this.dispatchOutbound()
   }
 
-  /** Stops outbound dispatch and all channel adapters. */
+  /** Stops outbound dispatch, webhook server, and all channel adapters. */
   async stopAll(): Promise<void> {
     this.dispatcherRunning = false
 
     for (const channel of this.channels) {
       await channel.stop()
+    }
+
+    if (this.webhookServer) {
+      await this.webhookServer.stop()
+      this.webhookServer = null
     }
   }
 

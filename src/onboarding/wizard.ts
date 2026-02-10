@@ -78,6 +78,77 @@ async function collectCredentials(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Step – Configure optional webhook server                           */
+/* ------------------------------------------------------------------ */
+
+interface WebhookSettings {
+  enabled: boolean
+  port: number
+  url: string
+  secret: string
+}
+
+async function configureWebhook(
+  rl: readline.Interface,
+  channel: 'telegram' | 'discord'
+): Promise<WebhookSettings> {
+  const disabled: WebhookSettings = { enabled: false, port: 3000, url: '', secret: '' }
+
+  console.log(
+    '\nWould you like to enable webhook mode?\n\n' +
+      '  Webhooks let your bot receive messages via HTTP instead of polling.\n' +
+      '  Recommended for production deployments and container environments.\n' +
+      '  Requires a publicly accessible URL (or a tunnel like ngrok).\n\n' +
+      '  1) No  – use default polling/gateway (simpler, great for development)\n' +
+      '  2) Yes – configure a webhook server\n'
+  )
+  const choice = await ask(rl, 'Enter 1 or 2: ')
+  if (choice !== '2') return disabled
+
+  const portInput = await ask(rl, 'Webhook server port [3000]: ')
+  const port = portInput ? Number(portInput) : 3000
+
+  let url = ''
+  while (!url) {
+    url = await ask(rl, 'Public URL (e.g. https://yourdomain.com or https://xxx.ngrok-free.app): ')
+  }
+
+  let secret = ''
+  if (channel === 'telegram') {
+    console.log(
+      '\n  Telegram supports a secret token to verify webhook requests.\n' +
+        '  Leave blank to auto-generate one, or enter your own.\n'
+    )
+    const input = await ask(rl, 'Webhook secret [auto]: ')
+    secret = input || generateSecret()
+    console.log(`  ✔  Secret: ${secret}`)
+  } else {
+    console.log(
+      '\n  Discord requires your application\'s public key for webhook verification.\n' +
+        '  Find it at: https://discord.com/developers/applications → General Information\n'
+    )
+    while (!secret) {
+      secret = await ask(rl, 'Application public key (hex): ')
+    }
+    console.log(
+      '\n  After starting the bot, set your Interactions Endpoint URL in the\n' +
+        `  Discord Developer Portal to: ${url.replace(/\/$/, '')}/webhook/discord\n`
+    )
+  }
+
+  return { enabled: true, port, url: url.replace(/\/$/, ''), secret }
+}
+
+function generateSecret(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let result = ''
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
+/* ------------------------------------------------------------------ */
 /*  Step 5 – Choose model                                              */
 /* ------------------------------------------------------------------ */
 
@@ -144,6 +215,7 @@ export async function runOnboarding(): Promise<Settings> {
   try {
     const channel = await chooseChannel(rl)
     const token = await collectCredentials(rl, channel)
+    const webhook = await configureWebhook(rl, channel)
     const model = await chooseModel(rl)
     const workspace = await chooseWorkspace(rl)
 
@@ -152,7 +224,8 @@ export async function runOnboarding(): Promise<Settings> {
       token,
       allowFrom: [],
       model,
-      workspace
+      workspace,
+      ...(webhook.enabled ? { webhook } : {})
     }
 
     writeSettings(settings)
