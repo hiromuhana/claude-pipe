@@ -5,6 +5,7 @@ import { readSettings, settingsExist } from './config/settings.js'
 import { AgentLoop } from './core/agent-loop.js'
 import { MessageBus } from './core/bus.js'
 import { ClaudeClient } from './core/claude-client.js'
+import { createHeartbeat } from './core/heartbeat.js'
 import { logger } from './core/logger.js'
 import { SessionStore } from './core/session-store.js'
 import { runOnboarding } from './onboarding/wizard.js'
@@ -73,12 +74,14 @@ async function main(): Promise<void> {
   const claude = new ClaudeClient(config, sessionStore, logger)
   const agent = new AgentLoop(bus, config, claude, logger)
   const channels = new ChannelManager(config, bus, logger)
+  const heartbeat = createHeartbeat(config, bus, logger)
 
   const { handler } = setupCommands({ config, claude, sessionStore })
   agent.setCommandHandler(handler)
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('shutdown.signal', { signal })
+    heartbeat.stop()
     agent.stop()
     await channels.stopAll()
   }
@@ -92,6 +95,7 @@ async function main(): Promise<void> {
 
   await channels.startAll()
   await agent.start()
+  heartbeat.start()
 }
 
 main().catch((error: unknown) => {

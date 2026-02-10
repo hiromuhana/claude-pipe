@@ -1,4 +1,5 @@
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import * as readline from 'node:readline'
 
@@ -100,7 +101,6 @@ interface WebhookSettings {
 
 /* Detect local network IP address */
 function detectLocalIp(): string | null {
-  const os = require('node:os')
   const nets = os.networkInterfaces()
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]!) {

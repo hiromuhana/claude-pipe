@@ -67,7 +67,18 @@ export const configSchema = z.object({
       maxFiles: 3
     }),
   sessionStorePath: z.string(),
-  maxToolIterations: z.number().int().positive().default(20)
+  maxToolIterations: z.number().int().positive().default(20),
+  heartbeat: z
+    .object({
+      enabled: z.boolean().default(true),
+      intervalMinutes: z.number().int().positive().default(30),
+      defaultChatId: z.string().optional(),
+      defaultChannel: z.enum(['telegram', 'discord']).optional()
+    })
+    .default({
+      enabled: true,
+      intervalMinutes: 30
+    })
 })
 
 export type ClaudePipeConfig = z.infer<typeof configSchema>
