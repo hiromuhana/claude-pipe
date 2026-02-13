@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, unlink } from 'node:fs/promises'
+import { mkdir, unlink, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
+import OpenAI from 'openai'
 
 const execFileAsync = promisify(execFile)
 
@@ -42,31 +43,18 @@ export interface WhisperUnavailable {
 
 export type TranscribeResult = WhisperResult | WhisperUnavailable
 
-export const WHISPER_INSTALL_INSTRUCTIONS = `The user sent a voice/audio message, but whisper-cpp is not available for transcription.
+export const WHISPER_INSTALL_INSTRUCTIONS = `The user sent a voice/audio message, but transcription is not available.
 
-To enable voice transcription, install whisper-cpp:
+To enable voice transcription, either:
 
-**macOS (Homebrew):**
+**Option 1: Use OpenAI Whisper API**
+Set the OPENAI_API_KEY environment variable with your OpenAI API key.
+
+**Option 2: Use whisper.cpp locally**
 \`\`\`
 brew install whisper-cpp
 whisper-cpp-download-ggml-model base.en
-\`\`\`
-
-**Build from source:**
-\`\`\`
-git clone https://github.com/ggerganov/whisper.cpp.git
-cd whisper.cpp
-cmake -B build
-cmake --build build --config Release
-./models/download-ggml-model.sh base.en
-\`\`\`
-
-After installing, make sure the whisper-cpp binary is in your PATH and a model file (e.g. ggml-base.en.bin) is in one of:
-- ~/.local/share/whisper-cpp/models/
-- ~/whisper.cpp/models/
-- /usr/local/share/whisper-cpp/models/
-
-Or set WHISPER_CPP_PATH and WHISPER_CPP_MODEL environment variables.`
+\`\`\``
 
 /**
  * Attempts to find the whisper-cpp binary in $PATH or via environment variable.
@@ -133,12 +121,38 @@ export async function convertToWav(inputPath: string): Promise<string> {
 }
 
 /**
- * Transcribes an audio file using whisper.cpp.
+ * Transcribes an audio file using OpenAI Whisper API.
  *
- * Downloads and converts the audio if needed, runs whisper-cpp, and returns
- * either the transcription text or a reason for failure with install instructions.
+ * First checks for OPENAI_API_KEY, then falls back to whisper.cpp.
  */
 export async function transcribeAudio(audioFilePath: string): Promise<TranscribeResult> {
+  const openaiApiKey = process.env['OPENAI_API_KEY']
+
+  if (openaiApiKey) {
+    try {
+      const openai = new OpenAI({ apiKey: openaiApiKey })
+
+      const audioBuffer = await readFile(audioFilePath)
+      const blob = new Blob([audioBuffer])
+
+      const transcript = await openai.audio.transcriptions.create({
+        file: new File([blob], 'audio.wav', { type: 'audio/wav' }),
+        model: 'whisper-1',
+      })
+
+      const text = transcript.text.trim()
+      if (!text) {
+        return { success: false, reason: 'OpenAI Whisper produced empty transcription' }
+      }
+
+      return { success: true, text }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, reason: `OpenAI Whisper transcription failed: ${message}` }
+    }
+  }
+
+  // Fallback to whisper.cpp
   const binary = await findWhisperBinary()
   if (!binary) {
     return { success: false, reason: 'whisper-cpp binary not found' }
