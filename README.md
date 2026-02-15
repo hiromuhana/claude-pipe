@@ -98,6 +98,7 @@ Configuration is stored in `~/.claude-pipe/settings.json` and created by the onb
   "channel": "telegram",
   "token": "your-bot-token",
   "allowFrom": ["user-id-1", "user-id-2"],
+  "allowChannels": ["discord-channel-id-1", "discord-channel-id-2"],
   "model": "claude-sonnet-4-5",
   "workspace": "/path/to/your/workspace"
 }
@@ -110,6 +111,7 @@ Configuration is stored in `~/.claude-pipe/settings.json` and created by the onb
 | `channel` | Platform to use: `telegram`, `discord`, or `cli` |
 | `token` | Bot token from [BotFather](https://t.me/botfather) or [Discord Developer Portal](https://discord.com/developers/applications) |
 | `allowFrom` | Array of allowed user IDs (empty = allow everyone) |
+| `allowChannels` | Discord-only channel ID allowlist (empty/missing = allow all channels) |
 | `model` | Claude model to use (e.g., `claude-haiku-4`, `claude-sonnet-4-5`, `claude-opus-4-5`) |
 | `workspace` | Root directory Claude can access |
 
@@ -133,6 +135,7 @@ For advanced options like transcript logging or custom summary prompts, you can 
 | `CLAUDEPIPE_CODEX_COMMAND` | Codex executable path/command (default: `codex`) |
 | `CLAUDEPIPE_CODEX_ARGS` | Codex startup args (default: `--dangerously-bypass-approvals-and-sandbox app-server`) |
 | `CLAUDEPIPE_CLI_ENABLED` | Enable CLI channel (`true`/`false`) |
+| `CLAUDEPIPE_DISCORD_ALLOW_CHANNELS` | Comma-separated allowed Discord channel IDs (empty = allow all) |
 | `CLAUDEPIPE_CLI_ALLOW_FROM` | Comma-separated allowed sender IDs for CLI mode |
 | `CLAUDEPIPE_CLI_SENDER_ID` | Sender ID used by CLI channel (default: `local-user`) |
 | `CLAUDEPIPE_CLI_CHAT_ID` | Chat ID used by CLI channel (default: `local-chat`) |
