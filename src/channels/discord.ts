@@ -175,7 +175,7 @@ export class DiscordChannel implements Channel {
 
     // Process attachments from Discord message
     const attachments: InboundMessage['attachments'] = []
-    if (message.attachments.size > 0) {
+    if (message.attachments && message.attachments.size > 0) {
       for (const [, attachment] of message.attachments) {
         let attachmentType: 'image' | 'video' | 'audio' | 'document' | 'file' = 'file'
         if (attachment.contentType) {
