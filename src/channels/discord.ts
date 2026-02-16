@@ -170,17 +170,17 @@ export class DiscordChannel implements Channel {
   /**
    * Prepares attachments for Discord by converting them to the format Discord expects.
    * Discord accepts URLs or file paths as attachment sources.
+   * Filters out any attachments without a valid source.
    */
   private prepareAttachments(attachments?: Attachment[]): Array<{ attachment: string; name?: string }> {
     if (!attachments || attachments.length === 0) return []
 
-    return attachments.map((att) => {
-      const attachment = att.url || att.path || ''
-      return {
-        attachment,
+    return attachments
+      .filter((att) => att.url || att.path)
+      .map((att) => ({
+        attachment: att.url || att.path || '',
         name: att.filename
-      }
-    })
+      }))
   }
 
   private async onMessage(message: Message): Promise<void> {

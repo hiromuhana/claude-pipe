@@ -248,14 +248,19 @@ export class TelegramChannel implements Channel {
             chat_id: Number(chatId)
           }
 
-          // Use URL if available, otherwise use file path
+          // Use URL if available, otherwise skip local paths
           if (attachment.url) {
             payload[fileFieldName] = attachment.url
           } else if (attachment.path) {
-            // For local files, we need to use multipart/form-data
-            // For now, we'll pass the path as a URL and let Telegram handle it
-            // In production, you'd want to upload the file using FormData
-            payload[fileFieldName] = attachment.path
+            // Local file paths require multipart/form-data upload
+            // Telegram doesn't accept file paths in JSON payloads
+            // For now, skip local files - only URLs are supported
+            this.logger.warn('channel.telegram.attachment_local_path_unsupported', {
+              chatId,
+              path: attachment.path,
+              filename: attachment.filename
+            })
+            return
           } else {
             throw new Error('Attachment must have either url or path')
           }
