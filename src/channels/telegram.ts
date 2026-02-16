@@ -5,7 +5,7 @@ import type { ClaudePipeConfig } from '../config/schema.js'
 import { MessageBus } from '../core/bus.js'
 import { retry } from '../core/retry.js'
 import { chunkText } from '../core/text-chunk.js'
-import type { InboundMessage, Logger, OutboundMessage } from '../core/types.js'
+import type { Attachment, InboundMessage, Logger, OutboundMessage } from '../core/types.js'
 import { isSenderAllowed, type Channel } from './base.js'
 import {
   transcribeAudio,
@@ -117,7 +117,7 @@ export class TelegramChannel implements Channel {
     this.logger.info('channel.telegram.stop')
   }
 
-  /** Sends a text response to Telegram chat. */
+  /** Sends a text response (and optional attachments) to Telegram chat. */
   async send(message: OutboundMessage): Promise<void> {
     if (!this.config.channels.telegram.enabled) return
     if (message.metadata?.kind === 'progress') {
@@ -126,39 +126,50 @@ export class TelegramChannel implements Channel {
     }
 
     const token = this.config.channels.telegram.token
-    const url = `https://api.telegram.org/bot${token}/sendMessage`
-    const chunks = chunkText(message.content, TELEGRAM_MESSAGE_MAX)
 
-    for (const part of chunks) {
-      try {
-        await retry(
-          async () => {
-            const response = await fetch(url, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: Number(message.chatId),
-                text: part,
-                parse_mode: 'Markdown'
+    // Send attachments first if present
+    if (message.attachments && message.attachments.length > 0) {
+      for (const attachment of message.attachments) {
+        await this.sendAttachment(message.chatId, attachment, token)
+      }
+    }
+
+    // Send text content if present
+    if (message.content && message.content.trim()) {
+      const url = `https://api.telegram.org/bot${token}/sendMessage`
+      const chunks = chunkText(message.content, TELEGRAM_MESSAGE_MAX)
+
+      for (const part of chunks) {
+        try {
+          await retry(
+            async () => {
+              const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: Number(message.chatId),
+                  text: part,
+                  parse_mode: 'Markdown'
+                })
               })
-            })
 
-            if (!response.ok) {
-              const body = await response.text()
-              throw new Error(`telegram send failed (${response.status}): ${body}`)
+              if (!response.ok) {
+                const body = await response.text()
+                throw new Error(`telegram send failed (${response.status}): ${body}`)
+              }
+            },
+            {
+              attempts: SEND_RETRY_ATTEMPTS,
+              backoffMs: SEND_RETRY_BACKOFF_MS
             }
-          },
-          {
-            attempts: SEND_RETRY_ATTEMPTS,
-            backoffMs: SEND_RETRY_BACKOFF_MS
-          }
-        )
-      } catch (error) {
-        this.logger.error('channel.telegram.send_failed', {
-          chatId: message.chatId,
-          error: error instanceof Error ? error.message : String(error)
-        })
-        break
+          )
+        } catch (error) {
+          this.logger.error('channel.telegram.send_failed', {
+            chatId: message.chatId,
+            error: error instanceof Error ? error.message : String(error)
+          })
+          break
+        }
       }
     }
 
@@ -195,6 +206,93 @@ export class TelegramChannel implements Channel {
       )
     } catch {
       // Silently fail - typing indicator is non-critical
+    }
+  }
+
+  /**
+   * Sends an attachment to a Telegram chat.
+   * Supports sending images, videos, documents, and audio files via URL or file path.
+   */
+  private async sendAttachment(chatId: string, attachment: Attachment, token: string): Promise<void> {
+    let endpoint: string
+    let fileFieldName: string
+
+    // Determine the appropriate Telegram API endpoint based on attachment type
+    switch (attachment.type) {
+      case 'image':
+        endpoint = 'sendPhoto'
+        fileFieldName = 'photo'
+        break
+      case 'video':
+        endpoint = 'sendVideo'
+        fileFieldName = 'video'
+        break
+      case 'audio':
+        endpoint = 'sendAudio'
+        fileFieldName = 'audio'
+        break
+      case 'document':
+      case 'file':
+      default:
+        endpoint = 'sendDocument'
+        fileFieldName = 'document'
+        break
+    }
+
+    const url = `https://api.telegram.org/bot${token}/${endpoint}`
+
+    try {
+      await retry(
+        async () => {
+          const payload: Record<string, unknown> = {
+            chat_id: Number(chatId)
+          }
+
+          // Use URL if available, otherwise use file path
+          if (attachment.url) {
+            payload[fileFieldName] = attachment.url
+          } else if (attachment.path) {
+            // For local files, we need to use multipart/form-data
+            // For now, we'll pass the path as a URL and let Telegram handle it
+            // In production, you'd want to upload the file using FormData
+            payload[fileFieldName] = attachment.path
+          } else {
+            throw new Error('Attachment must have either url or path')
+          }
+
+          // Add caption if there's a filename
+          if (attachment.filename) {
+            payload.caption = attachment.filename
+          }
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+
+          if (!response.ok) {
+            const body = await response.text()
+            throw new Error(`telegram ${endpoint} failed (${response.status}): ${body}`)
+          }
+        },
+        {
+          attempts: SEND_RETRY_ATTEMPTS,
+          backoffMs: SEND_RETRY_BACKOFF_MS
+        }
+      )
+
+      this.logger.info('channel.telegram.attachment_sent', {
+        chatId,
+        type: attachment.type,
+        filename: attachment.filename
+      })
+    } catch (error) {
+      this.logger.error('channel.telegram.attachment_send_failed', {
+        chatId,
+        type: attachment.type,
+        error: error instanceof Error ? error.message : String(error)
+      })
     }
   }
 

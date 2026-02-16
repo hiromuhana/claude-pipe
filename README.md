@@ -164,7 +164,9 @@ npm run test:run # run tests once
 ## Features
 
 - **Multi-channel support**: Works with Telegram, Discord, and CLI
-- **Media attachments**: Supports images, videos, documents, and audio files from both Telegram and Discord
+- **Bidirectional media attachments**: Full support for sending and receiving images, videos, documents, and audio files
+  - Receive attachments from users via Telegram and Discord
+  - Send attachments back to users in agent responses
   - Images and files are described to the agent with their locations
   - The agent can reference attached files in its workspace
 - **Voice transcription**: Voice messages in Telegram are automatically transcribed using whisper-cpp

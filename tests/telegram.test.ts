@@ -184,4 +184,102 @@ describe('TelegramChannel', () => {
     expect(inbound.attachments?.[0].filename).toBe('report.pdf')
     expect(inbound.attachments?.[0].mimeType).toBe('application/pdf')
   })
+
+  it('sends outbound message with image attachment', async () => {
+    const bus = new MessageBus()
+    const channel = new TelegramChannel(makeConfig(), bus, logger)
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => ''
+    })) as unknown as typeof fetch
+
+    global.fetch = fetchMock
+
+    await channel.send({
+      channel: 'telegram',
+      chatId: '200',
+      content: 'Here is an image',
+      attachments: [{
+        type: 'image',
+        url: 'https://example.com/image.jpg',
+        filename: 'image.jpg'
+      }]
+    })
+
+    // Should call sendPhoto for attachment, then sendMessage for text
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    
+    // First call: sendPhoto
+    const [photoUrl, photoInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(photoUrl).toContain('https://api.telegram.org/botTEST_TOKEN/sendPhoto')
+    expect(String(photoInit.body)).toContain('"photo":"https://example.com/image.jpg"')
+    expect(String(photoInit.body)).toContain('"caption":"image.jpg"')
+    
+    // Second call: sendMessage
+    const [textUrl, textInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(textUrl).toContain('https://api.telegram.org/botTEST_TOKEN/sendMessage')
+    expect(String(textInit.body)).toContain('"text":"Here is an image"')
+  })
+
+  it('sends outbound message with document attachment', async () => {
+    const bus = new MessageBus()
+    const channel = new TelegramChannel(makeConfig(), bus, logger)
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => ''
+    })) as unknown as typeof fetch
+
+    global.fetch = fetchMock
+
+    await channel.send({
+      channel: 'telegram',
+      chatId: '200',
+      content: 'Here is a document',
+      attachments: [{
+        type: 'document',
+        url: 'https://example.com/report.pdf',
+        filename: 'report.pdf'
+      }]
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    
+    // First call: sendDocument
+    const [docUrl, docInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(docUrl).toContain('https://api.telegram.org/botTEST_TOKEN/sendDocument')
+    expect(String(docInit.body)).toContain('"document":"https://example.com/report.pdf"')
+  })
+
+  it('sends outbound attachment without text content', async () => {
+    const bus = new MessageBus()
+    const channel = new TelegramChannel(makeConfig(), bus, logger)
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => ''
+    })) as unknown as typeof fetch
+
+    global.fetch = fetchMock
+
+    await channel.send({
+      channel: 'telegram',
+      chatId: '200',
+      content: '',
+      attachments: [{
+        type: 'video',
+        url: 'https://example.com/video.mp4',
+        filename: 'video.mp4'
+      }]
+    })
+
+    // Should only call sendVideo, not sendMessage since content is empty
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [videoUrl] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(videoUrl).toContain('https://api.telegram.org/botTEST_TOKEN/sendVideo')
+  })
 })

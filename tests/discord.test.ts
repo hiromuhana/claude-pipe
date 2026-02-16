@@ -182,4 +182,102 @@ describe('DiscordChannel', () => {
     expect(inbound.attachments?.[1].type).toBe('video')
     expect(inbound.attachments?.[1].filename).toBe('video.mp4')
   })
+
+  it('sends outbound message with image attachment via Discord', async () => {
+    const bus = new MessageBus()
+    const channel = new DiscordChannel(makeConfig(), bus, logger)
+
+    const send = vi.fn(async () => undefined)
+    const fetch = vi.fn(async () => ({
+      isTextBased: () => true,
+      send
+    }))
+
+    ;(channel as any).client = {
+      channels: { fetch }
+    }
+
+    await channel.send({
+      channel: 'discord',
+      chatId: 'c1',
+      content: 'Check this image',
+      attachments: [{
+        type: 'image',
+        url: 'https://example.com/image.png',
+        filename: 'image.png'
+      }]
+    })
+
+    expect(fetch).toHaveBeenCalledWith('c1')
+    expect(send).toHaveBeenCalledTimes(1)
+    
+    const sendCall = send.mock.calls[0][0]
+    expect(sendCall.content).toBe('Check this image')
+    expect(sendCall.files).toBeDefined()
+    expect(sendCall.files.length).toBe(1)
+    expect(sendCall.files[0].attachment).toBe('https://example.com/image.png')
+    expect(sendCall.files[0].name).toBe('image.png')
+  })
+
+  it('sends outbound message with multiple attachments via Discord', async () => {
+    const bus = new MessageBus()
+    const channel = new DiscordChannel(makeConfig(), bus, logger)
+
+    const send = vi.fn(async () => undefined)
+    const fetch = vi.fn(async () => ({
+      isTextBased: () => true,
+      send
+    }))
+
+    ;(channel as any).client = {
+      channels: { fetch }
+    }
+
+    await channel.send({
+      channel: 'discord',
+      chatId: 'c1',
+      content: 'Files attached',
+      attachments: [
+        { type: 'image', url: 'https://example.com/img1.png', filename: 'img1.png' },
+        { type: 'document', url: 'https://example.com/doc.pdf', filename: 'doc.pdf' }
+      ]
+    })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    const sendCall = send.mock.calls[0][0]
+    expect(sendCall.files.length).toBe(2)
+    expect(sendCall.files[0].attachment).toBe('https://example.com/img1.png')
+    expect(sendCall.files[1].attachment).toBe('https://example.com/doc.pdf')
+  })
+
+  it('sends outbound attachment without text content via Discord', async () => {
+    const bus = new MessageBus()
+    const channel = new DiscordChannel(makeConfig(), bus, logger)
+
+    const send = vi.fn(async () => undefined)
+    const fetch = vi.fn(async () => ({
+      isTextBased: () => true,
+      send
+    }))
+
+    ;(channel as any).client = {
+      channels: { fetch }
+    }
+
+    await channel.send({
+      channel: 'discord',
+      chatId: 'c1',
+      content: '',
+      attachments: [{
+        type: 'video',
+        url: 'https://example.com/video.mp4',
+        filename: 'video.mp4'
+      }]
+    })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    const sendCall = send.mock.calls[0][0]
+    expect(sendCall.content).toBe('')
+    expect(sendCall.files.length).toBe(1)
+  })
 })

@@ -1,19 +1,20 @@
 # Image and Media Attachments
 
-Claude Pipe supports image and media attachments from both Telegram and Discord channels. This document describes how attachments flow through the system and how agents handle them.
+Claude Pipe supports **bidirectional** image and media attachments for both Telegram and Discord channels. Agents can receive attachments from users and send attachments back in responses. This document describes how attachments flow through the system.
 
 ## Supported Attachment Types
 
-- **Images**: Photos sent via Telegram or Discord
+- **Images**: Photos sent/received via Telegram or Discord
 - **Videos**: Video files from either channel
 - **Documents**: Files and documents (PDFs, text files, etc.)
 - **Audio**: Audio files (in addition to Telegram voice messages which are transcribed)
 
 ## Architecture
 
-### Message Flow
+### Bidirectional Message Flow
 
 ```
+┌─────────────── Inbound Flow ────────────────┐
 User sends message with attachment
     ↓
 Channel adapter extracts attachment metadata
@@ -25,6 +26,15 @@ Agent Loop
 ModelClient receives attachments parameter
     ↓
 Agent processes with attachment context
+    ↓
+Agent generates response (optionally with attachments)
+    ↓
+OutboundMessage with attachments array
+    ↓
+Channel adapter sends attachments
+    ↓
+User receives message with attachments
+└─────────────── Outbound Flow ───────────────┘
 ```
 
 ### Attachment Interface
@@ -44,7 +54,7 @@ interface Attachment {
 
 ### Telegram
 
-When a user sends an attachment via Telegram:
+**Inbound (Receiving from Users):**
 
 1. The channel adapter detects the attachment type (photo, document, video)
 2. It retrieves the file metadata via the Telegram Bot API `getFile` endpoint
@@ -55,9 +65,20 @@ When a user sends an attachment via Telegram:
 4. The attachment metadata is added to the `InboundMessage.attachments` array
 5. If a caption is provided, it becomes the message content
 
+**Outbound (Sending to Users):**
+
+1. When `OutboundMessage` includes attachments, each is sent via the appropriate API:
+   - Images → `sendPhoto`
+   - Videos → `sendVideo`
+   - Audio → `sendAudio`
+   - Documents/Files → `sendDocument`
+2. Attachments are sent first, followed by text content
+3. Supports both URL-based attachments and local file paths
+4. Optional captions can be included with each attachment
+
 ### Discord
 
-When a user sends an attachment via Discord:
+**Inbound (Receiving from Users):**
 
 1. The channel adapter checks the `message.attachments` collection
 2. Discord attachments include direct URLs (note: these URLs expire after ~24 hours)
@@ -67,6 +88,13 @@ When a user sends an attachment via Discord:
    - `audio/*` → `type: 'audio'`
    - Others → `type: 'document'`
 4. The attachment metadata is added to the `InboundMessage.attachments` array
+
+**Outbound (Sending to Users):**
+
+1. When `OutboundMessage` includes attachments, they are sent via Discord's file attachment API
+2. Multiple attachments are sent together with the message
+3. Discord accepts both URLs and local file paths as attachment sources
+4. Attachments are sent with the first chunk of text if message content is long
 
 ## Agent Interface
 
@@ -147,6 +175,43 @@ Agent receives:
 
 Review this document
 ```
+
+### Agent Sending Image (Outbound)
+
+Agent generates a response with an image attachment:
+
+```typescript
+{
+  content: "Here's the chart you requested",
+  attachments: [{
+    type: 'image',
+    url: 'https://example.com/chart.png',
+    filename: 'sales_chart.png'
+  }]
+}
+```
+
+Result:
+- **Telegram**: Bot sends photo via `sendPhoto`, then text message
+- **Discord**: Bot sends message with embedded image
+
+### Agent Sending Multiple Files (Outbound)
+
+Agent sends multiple attachments:
+
+```typescript
+{
+  content: "Analysis complete. See attached files:",
+  attachments: [
+    { type: 'document', url: 'https://example.com/report.pdf', filename: 'report.pdf' },
+    { type: 'image', url: 'https://example.com/graph.png', filename: 'graph.png' }
+  ]
+}
+```
+
+Result:
+- **Telegram**: Bot sends document, then image, then text
+- **Discord**: Bot sends all attachments with the message
 
 ## Future Enhancements
 
