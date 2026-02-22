@@ -48,6 +48,10 @@ export function readSettings(): Settings {
 /** Writes settings to disk, creating the config directory if needed. */
 export function writeSettings(settings: Settings): void {
   const dir = defaultConfigDir()
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2) + '\n', 'utf-8')
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const filePath = path.join(dir, 'settings.json')
+  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2) + '\n', {
+    encoding: 'utf-8',
+    mode: 0o600
+  })
 }

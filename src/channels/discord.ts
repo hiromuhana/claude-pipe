@@ -15,6 +15,7 @@ import { MessageBus } from '../core/bus.js'
 import { retry } from '../core/retry.js'
 import { chunkText } from '../core/text-chunk.js'
 import type { InboundMessage, Logger, OutboundMessage } from '../core/types.js'
+import { RateLimiter } from '../core/rate-limiter.js'
 import { isSenderAllowed, type Channel } from './base.js'
 
 const DISCORD_MESSAGE_MAX = 1800
@@ -27,6 +28,7 @@ const SEND_RETRY_BACKOFF_MS = 50
 export class DiscordChannel implements Channel {
   readonly name = 'discord' as const
   private client: Client | null = null
+  private readonly rateLimiter = new RateLimiter(10, 60_000)
 
   constructor(
     private readonly config: ClaudePipeConfig,
@@ -153,6 +155,11 @@ export class DiscordChannel implements Channel {
     const senderId = message.author.id
     if (!isSenderAllowed(senderId, this.config.channels.discord.allowFrom)) {
       this.logger.warn('channel.discord.denied', { senderId })
+      return
+    }
+
+    if (!this.rateLimiter.isAllowed(senderId)) {
+      this.logger.warn('channel.discord.rate_limited', { senderId })
       return
     }
 

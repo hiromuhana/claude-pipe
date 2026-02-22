@@ -45,8 +45,7 @@ export function loadConfig(): ClaudePipeConfig {
     '--output-format',
     'stream-json',
     '--permission-mode',
-    'bypassPermissions',
-    '--dangerously-skip-permissions'
+    'plan'
   ]
 
   // Load env from ~/.claude-pipe/.env first, then local .env as a legacy fallback.

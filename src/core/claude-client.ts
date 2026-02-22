@@ -8,6 +8,7 @@ import type { ModelClient } from './model-client.js'
 import { SessionStore } from './session-store.js'
 import { TranscriptLogger } from './transcript-logger.js'
 import type { AgentTurnUpdate, Logger, ToolContext } from './types.js'
+import { filterEnvForChild } from './env-filter.js'
 
 type JsonRecord = Record<string, unknown>
 type AssistantTextBlock = { type: 'text'; text: string }
@@ -34,8 +35,7 @@ const defaultClaudeArgs = [
   '--output-format',
   'stream-json',
   '--permission-mode',
-  'bypassPermissions',
-  '--dangerously-skip-permissions'
+  'plan'
 ]
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -127,7 +127,7 @@ export class ClaudeClient implements ModelClient {
 
     const child = spawn(executable, args, {
       cwd: this.config.workspace,
-      env: process.env
+      env: filterEnvForChild(process.env)
     })
     this.logger.info('claude.spawn_start', {
       conversationKey,

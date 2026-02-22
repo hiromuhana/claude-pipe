@@ -5,6 +5,7 @@ import type { ModelClient } from './model-client.js'
 import { SessionStore } from './session-store.js'
 import { TranscriptLogger } from './transcript-logger.js'
 import type { AgentTurnUpdate, Logger, ToolContext } from './types.js'
+import { filterEnvForChild } from './env-filter.js'
 import {
   type CodexAskForApproval,
   type CodexThreadItem,
@@ -50,9 +51,9 @@ function truncate(value: string, max = 2000): string {
 }
 
 function parseCodexArgs(input: string | undefined): string[] {
-  if (!input) return ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never', 'app-server']
+  if (!input) return ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-failure', 'app-server']
   const trimmed = input.trim()
-  if (!trimmed) return ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never', 'app-server']
+  if (!trimmed) return ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-failure', 'app-server']
   if (trimmed.startsWith('[')) {
     try {
       const parsed = JSON.parse(trimmed) as unknown
@@ -67,12 +68,12 @@ function parseCodexArgs(input: string | undefined): string[] {
 function buildRuntimeOptions(): CodexRuntimeOptions {
   const command = process.env.CLAUDEPIPE_CODEX_COMMAND?.trim() || 'codex'
   const args = parseCodexArgs(process.env.CLAUDEPIPE_CODEX_ARGS)
-  const policyRaw = process.env.CLAUDEPIPE_CODEX_APPROVAL_POLICY?.trim() || 'never'
+  const policyRaw = process.env.CLAUDEPIPE_CODEX_APPROVAL_POLICY?.trim() || 'on-failure'
   const approvalPolicy: CodexAskForApproval =
-    policyRaw === 'untrusted' || policyRaw === 'on-failure' || policyRaw === 'on-request'
+    policyRaw === 'untrusted' || policyRaw === 'on-failure' || policyRaw === 'on-request' || policyRaw === 'never'
       ? policyRaw
-      : 'never'
-  const sandboxRaw = process.env.CLAUDEPIPE_CODEX_SANDBOX?.trim() || 'danger-full-access'
+      : 'on-failure'
+  const sandboxRaw = process.env.CLAUDEPIPE_CODEX_SANDBOX?.trim() || 'workspace-write'
   const sandboxMode =
     sandboxRaw === 'read-only' || sandboxRaw === 'danger-full-access'
       ? sandboxRaw
@@ -165,8 +166,8 @@ export class CodexClient implements ModelClient {
 
   async runTurn(conversationKey: string, userText: string, context: ToolContext): Promise<string> {
     const savedSession = this.store.get(conversationKey)
-    const env = { ...process.env }
-    const configuredApiKey = env[this.runtime.apiKeyEnvVar]
+    const env = filterEnvForChild(process.env)
+    const configuredApiKey = process.env[this.runtime.apiKeyEnvVar]
     if (configuredApiKey && !env.OPENAI_API_KEY) {
       env.OPENAI_API_KEY = configuredApiKey
     }

@@ -2,3 +2,4 @@ export { sessionNewCommand, sessionListCommand, sessionInfoCommand, sessionDelet
 export { helpCommand, statusCommand, pingCommand } from './utility.js'
 export { claudeAskCommand, claudeModelCommand } from './claude.js'
 export { configSetCommand, configGetCommand } from './config.js'
+export { modeCommand } from './mode.js'

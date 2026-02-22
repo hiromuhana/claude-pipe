@@ -10,6 +10,7 @@ import {
 import { helpCommand, statusCommand, pingCommand } from './definitions/utility.js'
 import { claudeAskCommand, claudeModelCommand } from './definitions/claude.js'
 import { configSetCommand, configGetCommand } from './definitions/config.js'
+import { modeCommand } from './definitions/mode.js'
 import { CommandHandler } from './handler.js'
 import { CommandRegistry } from './registry.js'
 import type { CommandDefinition } from './types.js'
@@ -90,6 +91,9 @@ export function setupCommands(
       return { model: config.model, workspace: config.workspace, ...mutableConfig }
     })
   )
+
+  // --- Mode command ---
+  registry.register(modeCommand(config))
 
   // --- Utility commands ---
   registry.register(

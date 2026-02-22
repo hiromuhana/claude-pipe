@@ -135,7 +135,7 @@ describe('CodexClient (json-rpc app-server)', () => {
     expect(store.set).toHaveBeenCalledWith('telegram:1', 'thread-1')
     expect(spawnMock).toHaveBeenCalledWith(
       'codex',
-      ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never', 'app-server'],
+      ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-failure', 'app-server'],
       expect.objectContaining({ cwd: '/tmp/workspace' })
     )
     expect(writes.some((line) => line.endsWith('\n'))).toBe(true)

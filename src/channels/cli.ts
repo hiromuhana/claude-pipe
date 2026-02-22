@@ -88,7 +88,7 @@ export class CliChannel implements Channel {
     }
 
     const allowFrom = this.config.channels.cli?.allowFrom ?? []
-    if (!isSenderAllowed(this.senderId, allowFrom)) {
+    if (allowFrom.length > 0 && !isSenderAllowed(this.senderId, allowFrom)) {
       this.logger.warn('channel.cli.denied', { senderId: this.senderId })
       this.io.output.write('bot> You are not authorised.\n')
       this.rl?.prompt()

@@ -21,5 +21,6 @@ export {
   claudeAskCommand,
   claudeModelCommand,
   configSetCommand,
-  configGetCommand
+  configGetCommand,
+  modeCommand
 } from './definitions/index.js'

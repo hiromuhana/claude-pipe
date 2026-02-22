@@ -11,8 +11,7 @@ const DEFAULT_CLAUDE_CLI_ARGS = [
   '--output-format',
   'stream-json',
   '--permission-mode',
-  'bypassPermissions',
-  '--dangerously-skip-permissions'
+  'plan'
 ]
 
 /* ------------------------------------------------------------------ */
@@ -230,6 +229,51 @@ async function collectCredentials(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Step 4.5 – Collect allowed user IDs                                */
+/* ------------------------------------------------------------------ */
+
+async function collectAllowFrom(
+  rl: readline.Interface,
+  channel: 'telegram' | 'discord' | 'cli',
+  currentAllowFrom?: string[]
+): Promise<string[]> {
+  if (channel === 'cli') {
+    return currentAllowFrom ?? []
+  }
+
+  const platformHelp =
+    channel === 'telegram'
+      ? 'To find your Telegram user ID, message @userinfobot on Telegram.'
+      : 'To find your Discord user ID, enable Developer Mode in Settings → Advanced, then right-click your name → Copy User ID.'
+
+  console.log(
+    `\nWho should be allowed to use this bot?\n` +
+      `  ${platformHelp}\n` +
+      `  Enter comma-separated user IDs (required for security).\n`
+  )
+
+  const currentLabel =
+    currentAllowFrom && currentAllowFrom.length > 0
+      ? ` [${currentAllowFrom.join(',')}]`
+      : ''
+
+  let allowFrom: string[] = []
+  while (allowFrom.length === 0) {
+    const input = await ask(rl, `Allowed user IDs${currentLabel}: `)
+    const raw = input || (currentAllowFrom ?? []).join(',')
+    allowFrom = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (allowFrom.length === 0) {
+      console.log('  ⚠  At least one user ID is required. An empty list blocks all users.')
+    }
+  }
+
+  return allowFrom
+}
+
+/* ------------------------------------------------------------------ */
 /*  Step 5 – Choose model                                              */
 /* ------------------------------------------------------------------ */
 
@@ -391,6 +435,7 @@ export async function runOnboarding(existingSettings?: Settings): Promise<Settin
     }
     const channel = await chooseChannel(rl, existingSettings?.channel)
     const token = await collectCredentials(rl, channel, existingSettings?.token)
+    const allowFrom = await collectAllowFrom(rl, channel, existingSettings?.allowFrom)
     const model = await chooseModelForProvider(rl, provider, existingSettings?.model)
     const workspace = await chooseWorkspace(rl, existingSettings?.workspace)
 
@@ -408,7 +453,7 @@ export async function runOnboarding(existingSettings?: Settings): Promise<Settin
           : {}),
       channel,
       token,
-      allowFrom: existingSettings?.allowFrom ?? [],
+      allowFrom,
       model,
       workspace
     }

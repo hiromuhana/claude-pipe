@@ -12,8 +12,12 @@ export interface Channel {
 
 /**
  * Shared helper for allow-list decisions.
+ *
+ * Fail-closed: an empty allow-list denies everyone.
+ * Callers that need open-by-default semantics (e.g. CLI) must handle
+ * the empty-list case before calling this function.
  */
 export function isSenderAllowed(senderId: string, allowFrom: string[]): boolean {
-  if (allowFrom.length === 0) return true
+  if (allowFrom.length === 0) return false
   return allowFrom.includes(senderId)
 }

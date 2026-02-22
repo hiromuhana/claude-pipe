@@ -6,6 +6,7 @@ import { MessageBus } from '../core/bus.js'
 import { retry } from '../core/retry.js'
 import { chunkText } from '../core/text-chunk.js'
 import type { InboundMessage, Logger, OutboundMessage } from '../core/types.js'
+import { RateLimiter } from '../core/rate-limiter.js'
 import { isSenderAllowed, type Channel } from './base.js'
 import {
   transcribeAudio,
@@ -60,6 +61,7 @@ export class TelegramChannel implements Channel {
   private nextOffset = 0
   /** Tracks chat IDs pending responses for typing indicator cleanup. */
   private pendingTyping = new Set<string>()
+  private readonly rateLimiter = new RateLimiter(10, 60_000)
 
   constructor(
     private readonly config: ClaudePipeConfig,
@@ -209,6 +211,11 @@ export class TelegramChannel implements Channel {
     const senderId = String(message.from.id)
     if (!isSenderAllowed(senderId, this.config.channels.telegram.allowFrom)) {
       this.logger.warn('channel.telegram.denied', { senderId })
+      return
+    }
+
+    if (!this.rateLimiter.isAllowed(senderId)) {
+      this.logger.warn('channel.telegram.rate_limited', { senderId })
       return
     }
 
