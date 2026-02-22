@@ -56,6 +56,8 @@ export interface AgentTurnUpdate {
   message: string
   toolName?: string
   toolUseId?: string
+  /** Formatted detail text for user-facing tools (AskUserQuestion, ExitPlanMode). */
+  detail?: string
 }
 
 /**

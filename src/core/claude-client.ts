@@ -16,6 +16,7 @@ type AssistantToolUseBlock = {
   type: 'tool_use'
   name: string
   id?: string
+  input?: Record<string, unknown>
 }
 type ToolResultBlock = {
   type: 'tool_result'
@@ -78,7 +79,8 @@ const WRITE_TOOLS = new Set([
   'MultiEdit',
   'Bash',
   'NotebookEdit',
-  'TodoWrite'
+  'TodoWrite',
+  'ExitPlanMode'
 ])
 
 const PLAN_PATTERNS = [
@@ -86,6 +88,42 @@ const PLAN_PATTERNS = [
   /(?:here(?:'s| is) (?:my |the )?plan|proposed changes|implementation plan|plan of action)/i,
   /(?:step \d|phase \d|first,? I)/i
 ]
+
+/**
+ * Formats user-facing tool input into a readable Discord message.
+ * Returns undefined for non-interactive tools.
+ */
+function formatInteractiveToolDetail(name: string, input?: Record<string, unknown>): string | undefined {
+  if (!input) return undefined
+
+  if (name === 'AskUserQuestion') {
+    const questions = Array.isArray(input.questions) ? input.questions : []
+    const lines: string[] = []
+    for (const q of questions) {
+      if (!isRecord(q)) continue
+      if (typeof q.question === 'string') lines.push(`**${q.question}**`)
+      const options = Array.isArray(q.options) ? q.options : []
+      for (let i = 0; i < options.length; i++) {
+        const opt = options[i]
+        if (isRecord(opt) && typeof opt.label === 'string') {
+          lines.push(`${i + 1}. ${opt.label}`)
+        }
+      }
+    }
+    return lines.length > 0 ? lines.join('\n') : undefined
+  }
+
+  if (name === 'ExitPlanMode') {
+    const plan = typeof input.plan === 'string' ? input.plan : undefined
+    if (plan) {
+      const truncated = plan.length > 1500 ? plan.slice(0, 1500) + '...' : plan
+      return `**Plan approval requested**\n${truncated}`
+    }
+    return '**Plan approval requested**'
+  }
+
+  return undefined
+}
 
 export function detectPlanInResponse(text: string, toolsUsed: string[]): boolean {
   if (toolsUsed.some((t) => WRITE_TOOLS.has(t))) return true
@@ -202,12 +240,14 @@ export class ClaudeClient implements ModelClient {
             toolName: block.name,
             toolUseId: block.id
           })
+          const detail = formatInteractiveToolDetail(block.name, block.input)
           await this.publishUpdate(context, {
             kind: 'tool_call_started',
             conversationKey,
             message: `Using tool: ${block.name}`,
             toolName: block.name,
-            ...(block.id ? { toolUseId: block.id } : {})
+            ...(block.id ? { toolUseId: block.id } : {}),
+            ...(detail ? { detail } : {})
           })
         }
       }

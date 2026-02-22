@@ -8,6 +8,7 @@ import type { ModelClient } from './model-client.js'
 import type { AgentTurnUpdate, ApprovalRequest, InboundMessage, Logger, ToolContext } from './types.js'
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+const HEARTBEAT_INTERVAL_MS = 30_000 // 30 seconds
 
 /**
  * Central message-processing loop.
@@ -26,6 +27,29 @@ export class AgentLoop {
     private readonly client: ModelClient,
     private readonly logger: Logger
   ) {}
+
+  /**
+   * Runs a long-running async function while periodically sending a heartbeat
+   * message to the channel so the user knows the bot is still working.
+   */
+  private async withHeartbeat<T>(
+    inbound: InboundMessage,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const timer = setInterval(() => {
+      void this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: '_Still working..._'
+      })
+    }, HEARTBEAT_INTERVAL_MS)
+
+    try {
+      return await fn()
+    } finally {
+      clearInterval(timer)
+    }
+  }
 
   /** Attaches a command handler for slash-command interception. */
   setCommandHandler(handler: CommandHandler): void {
@@ -111,22 +135,26 @@ export class AgentLoop {
       if (throttled) return
       this.lastProgressByConversation.set(conversationKey, { key, at: now })
 
-      // Log tool call events for debugging, but do not send them to the channel.
-      // The agent will naturally explain its actions in text responses before tool calls.
-      if (
-        update.kind === 'tool_call_started' ||
-        update.kind === 'tool_call_finished' ||
-        update.kind === 'tool_call_failed'
-      ) {
-        this.logger.info('ui.channel.update', {
-          conversationKey,
-          channel: inbound.channel,
-          chatId: inbound.chatId,
-          kind: update.kind,
-          toolName: update.toolName,
-          toolUseId: update.toolUseId,
-          message: update.message
-        })
+      this.logger.info('ui.channel.update', {
+        conversationKey,
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        kind: update.kind,
+        toolName: update.toolName,
+        toolUseId: update.toolUseId,
+        message: update.message
+      })
+
+      // Forward user-facing tool calls (questions, plan approval) to the channel
+      if (update.kind === 'tool_call_started' && update.detail) {
+        const INTERACTIVE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+        if (INTERACTIVE_TOOLS.has(update.toolName ?? '')) {
+          await this.bus.publishOutbound({
+            channel: inbound.channel,
+            chatId: inbound.chatId,
+            content: update.detail
+          })
+        }
       }
     }
 
@@ -147,7 +175,9 @@ export class AgentLoop {
       return
     }
 
-    const content = await this.client.runTurn(conversationKey, modelInput, context)
+    const content = await this.withHeartbeat(inbound, () =>
+      this.client.runTurn(conversationKey, modelInput, context)
+    )
 
     await this.bus.publishOutbound({
       channel: inbound.channel,
@@ -168,7 +198,9 @@ export class AgentLoop {
     context: ToolContext
   ): Promise<void> {
     // Phase 1: Run plan turn
-    const planResult = await this.client.runPlanTurn!(conversationKey, modelInput, context)
+    const planResult = await this.withHeartbeat(inbound, () =>
+      this.client.runPlanTurn!(conversationKey, modelInput, context)
+    )
 
     if (!planResult.hasPlan) {
       // No write operations detected — send response directly
@@ -244,7 +276,9 @@ export class AgentLoop {
       content: 'Approved! Executing the plan now...'
     })
 
-    const executeResponse = await this.client.runExecuteTurn!(conversationKey, context)
+    const executeResponse = await this.withHeartbeat(inbound, () =>
+      this.client.runExecuteTurn!(conversationKey, context)
+    )
 
     await this.bus.publishOutbound({
       channel: inbound.channel,
