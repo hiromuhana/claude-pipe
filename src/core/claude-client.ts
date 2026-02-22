@@ -58,6 +58,17 @@ function isToolResultBlock(block: unknown): block is ToolResultBlock {
   return block.type === 'tool_result'
 }
 
+/**
+ * Extracts a short topic string from the user prompt.
+ * Strips the summary-template wrapper if present.
+ */
+function extractTopic(userText: string, maxLen = 60): string {
+  const requestMatch = userText.match(/Request:\s*(.+)/i)
+  const raw = requestMatch?.[1] ?? userText.split('\n')[0] ?? userText
+  const trimmed = raw.trim()
+  return trimmed.length > maxLen ? trimmed.slice(0, maxLen) + '...' : trimmed
+}
+
 function truncate(value: string, max = 2000): string {
   if (value.length <= max) return value
   return `${value.slice(0, max)}...(truncated)`
@@ -449,7 +460,7 @@ export class ClaudeClient implements ModelClient {
     }
 
     if (observedSessionId) {
-      await this.store.set(conversationKey, observedSessionId)
+      await this.store.set(conversationKey, observedSessionId, extractTopic(userText))
     }
 
     this.logger.info('claude.spawn_exit', {

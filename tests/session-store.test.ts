@@ -23,6 +23,26 @@ describe('SessionStore', () => {
     expect(reloaded.get('telegram:123')?.sessionId).toBe('sess-abc')
   })
 
+  it('stores topic on first turn and preserves it on subsequent turns', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'claude-pipe-test-'))
+    const path = join(dir, 'sessions.json')
+
+    const store = new SessionStore(path)
+    await store.init()
+
+    // First turn: topic is set
+    await store.set('discord:456', 'sess-1', 'Fix login bug')
+    expect(store.get('discord:456')?.topic).toBe('Fix login bug')
+
+    // Follow-up turn (same session ID): topic is preserved
+    await store.set('discord:456', 'sess-1', 'Different message')
+    expect(store.get('discord:456')?.topic).toBe('Fix login bug')
+
+    // New session ID: topic is updated
+    await store.set('discord:456', 'sess-2', 'Add auth feature')
+    expect(store.get('discord:456')?.topic).toBe('Add auth feature')
+  })
+
   it('clears an existing session record', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'claude-pipe-test-'))
     const path = join(dir, 'sessions.json')

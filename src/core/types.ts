@@ -29,6 +29,8 @@ export interface OutboundMessage {
 export interface SessionRecord {
   sessionId: string
   updatedAt: string
+  /** Short summary captured from the first user message in this session. */
+  topic?: string
 }
 
 export type SessionMap = Record<string, SessionRecord>

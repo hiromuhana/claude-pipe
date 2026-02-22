@@ -26,7 +26,7 @@ export function sessionNewCommand(
  * Lists active sessions.
  */
 export function sessionListCommand(
-  listSessions: () => Array<{ key: string; updatedAt: string }>
+  listSessions: () => Array<{ key: string; updatedAt: string; topic?: string }>
 ): CommandDefinition {
   return {
     name: 'session_list',
@@ -39,9 +39,11 @@ export function sessionListCommand(
       if (sessions.length === 0) {
         return { content: 'No active sessions.' }
       }
-      const lines = sessions.map(
-        (s, i) => `${i + 1}. \`${s.key}\` — last active ${s.updatedAt}`
-      )
+      const lines = sessions.map((s, i) => {
+        const topic = s.topic ? `"${s.topic}"` : '(no topic)'
+        const time = s.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '')
+        return `${i + 1}. \`${s.key}\`\n   ${topic} — ${time}`
+      })
       return { content: `**Active sessions (${sessions.length}):**\n${lines.join('\n')}` }
     }
   }
@@ -52,7 +54,7 @@ export function sessionListCommand(
  * Shows info about the current chat's session.
  */
 export function sessionInfoCommand(
-  getSession: (conversationKey: string) => { sessionId: string; updatedAt: string } | undefined
+  getSession: (conversationKey: string) => { sessionId: string; updatedAt: string; topic?: string } | undefined
 ): CommandDefinition {
   return {
     name: 'session_info',
@@ -65,12 +67,14 @@ export function sessionInfoCommand(
       if (!session) {
         return { content: 'No active session for this chat.' }
       }
-      return {
-        content:
-          `**Session info:**\n` +
-          `• Session ID: \`${session.sessionId}\`\n` +
-          `• Last active: ${session.updatedAt}`
-      }
+      const time = session.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '')
+      const lines = [
+        '**Session info:**',
+        `• Topic: ${session.topic ? `"${session.topic}"` : '(none)'}`,
+        `• Session ID: \`${session.sessionId}\``,
+        `• Last active: ${time}`
+      ]
+      return { content: lines.join('\n') }
     }
   }
 }

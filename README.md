@@ -196,18 +196,50 @@ To remove the bot from a server:
 
 Alternatively, right-click the bot in the member list → **Kick**.
 
-## Session & admin commands
+## Commands
+
+Type `/help` in chat to see this list. Use `/help <command>` for details on a specific command.
+
+### Session
+
+| Command | Aliases | Permission | Description |
+|---------|---------|-----------|-------------|
+| `/session_new` | `/new`, `/reset` | user | Start a new Claude session for this chat |
+| `/session_list` | — | admin | List all active sessions (with topics) |
+| `/session_info` | — | user | Show current session info and topic |
+| `/session_delete` | — | user | Delete the current session |
+
+### Conversation
+
+| Command | Aliases | Permission | Description |
+|---------|---------|-----------|-------------|
+| `/clear` | `/cls` | user | Clear conversation history |
+| `/compact` | — | user | Summarize conversation and continue with reduced context |
+
+### Mode & config
+
+| Command | Aliases | Permission | Description |
+|---------|---------|-----------|-------------|
+| `/mode [plan\|auto\|bypass]` | — | admin | Show or switch permission mode |
+| `/claude_model` | `/model` | admin | Show or switch the active Claude model |
+| `/config_set` | — | admin | Set a runtime config value |
+| `/config_get` | — | admin | Show runtime config |
+
+**Permission modes:**
+
+| Mode | Shorthand | File edits | Bash commands |
+|------|-----------|-----------|---------------|
+| `plan` | `/mode plan` | Approval required | Approval required |
+| `autoEditApprove` | `/mode auto` | Auto-approved | Approval required |
+| `bypassPermissions` | `/mode bypass` | Auto-approved | Auto-approved |
+
+### Utility
 
 | Command | Permission | Description |
 |---------|-----------|-------------|
-| `/reset` or `/new` | user | Clear conversation history and start a new session |
-| `/session_delete` | user | Delete the current session completely |
-| `/session_info` | user | Show current session info |
-| `/session_list` | admin | List all active sessions |
-| `/mode [plan\|bypassPermissions]` | admin | Show or switch Claude CLI permission mode |
-| `/help` | user | Show available commands |
-| `/ping` | user | Check if the bot is alive |
-| `/status` | user | Show bot status |
+| `/help [command]` | user | Show command list or details for a specific command |
+| `/status` | user | Show bot runtime status (model, workspace, channels) |
+| `/ping` | user | Health check |
 
 ## Running in the background
 

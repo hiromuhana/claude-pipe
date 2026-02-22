@@ -111,7 +111,7 @@ describe('ClaudeClient (subprocess stream-json)', () => {
     expect(args).toContain('hello')
     expect(options.cwd).toBe('/tmp/workspace')
 
-    expect(store.set).toHaveBeenCalledWith('telegram:1', 'sess-new')
+    expect(store.set).toHaveBeenCalledWith('telegram:1', 'sess-new', 'hello')
   })
 
   it('passes resume session id when available', async () => {

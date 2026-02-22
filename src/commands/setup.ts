@@ -53,10 +53,13 @@ export function setupCommands(
   registry.register(
     sessionListCommand(() => {
       const map = sessionStore.entries()
-      const result: Array<{ key: string; updatedAt: string }> = []
+      const result: Array<{ key: string; updatedAt: string; topic?: string }> = []
       for (const key of Object.keys(map)) {
         const record = map[key]
-        if (record) result.push({ key, updatedAt: record.updatedAt })
+        if (!record) continue
+        const entry: { key: string; updatedAt: string; topic?: string } = { key, updatedAt: record.updatedAt }
+        if (record.topic) entry.topic = record.topic
+        result.push(entry)
       }
       return result
     })

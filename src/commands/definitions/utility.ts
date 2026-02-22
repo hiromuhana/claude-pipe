@@ -40,7 +40,13 @@ export function helpCommand(registry: CommandRegistry): CommandDefinition {
       const sections: string[] = []
       for (const [category, commands] of grouped) {
         const heading = category.charAt(0).toUpperCase() + category.slice(1)
-        const items = commands.map((c) => `  /${c.name} — ${c.description}`)
+        const items = commands.map((c) => {
+          const aliases = c.aliases && c.aliases.length > 0
+            ? ` (${c.aliases.map((a) => `/${a}`).join(', ')})`
+            : ''
+          const badge = c.permission === 'admin' ? ' [admin]' : ''
+          return `  /${c.name}${aliases}${badge} — ${c.description}`
+        })
         sections.push(`**${heading}:**\n${items.join('\n')}`)
       }
 

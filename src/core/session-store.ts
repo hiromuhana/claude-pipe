@@ -38,11 +38,19 @@ export class SessionStore {
   }
 
   /** Upserts conversation mapping and persists to disk atomically. */
-  async set(conversationKey: string, sessionId: string): Promise<void> {
-    this.map[conversationKey] = {
+  async set(conversationKey: string, sessionId: string, topic?: string): Promise<void> {
+    const existing = this.map[conversationKey]
+    const isNewSession = !existing || existing.sessionId !== sessionId
+    const resolvedTopic = isNewSession
+      ? (topic ?? existing?.topic)
+      : (existing?.topic ?? topic)
+
+    const record: SessionRecord = {
       sessionId,
       updatedAt: new Date().toISOString()
     }
+    if (resolvedTopic) record.topic = resolvedTopic
+    this.map[conversationKey] = record
     await this.persist()
   }
 
