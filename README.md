@@ -110,7 +110,7 @@ Configuration is stored in `~/.claude-pipe/settings.json` and created by the onb
 | `claudeCli` | Claude CLI runtime config (`command` and startup `args`) |
 | `channel` | Platform to use: `telegram`, `discord`, or `cli` |
 | `token` | Bot token from [BotFather](https://t.me/botfather) or [Discord Developer Portal](https://discord.com/developers/applications) |
-| `allowFrom` | Array of allowed user IDs (empty = allow everyone) |
+| `allowFrom` | Array of allowed user IDs (empty = deny all for Telegram/Discord, allow all for CLI) |
 | `allowChannels` | Discord-only channel ID allowlist (empty/missing = allow all channels) |
 | `model` | Claude model to use (e.g., `claude-haiku-4`, `claude-sonnet-4-5`, `claude-opus-4-5`) |
 | `workspace` | Root directory Claude can access |
@@ -140,18 +140,96 @@ For advanced options like transcript logging or custom summary prompts, you can 
 | `CLAUDEPIPE_CLI_SENDER_ID` | Sender ID used by CLI channel (default: `local-user`) |
 | `CLAUDEPIPE_CLI_CHAT_ID` | Chat ID used by CLI channel (default: `local-chat`) |
 
-### Dangerous defaults and flags
+### Security defaults
 
-This project currently ships with dangerous automation defaults for both runtimes. These settings reduce prompts and restrictions, but they can allow destructive file or shell operations if a prompt goes wrong.
+This project ships with safe defaults:
 
-- Claude default args include `--permission-mode bypassPermissions` and `--dangerously-skip-permissions`.
-- Codex default args include `--dangerously-bypass-approvals-and-sandbox app-server`.
+- Claude CLI runs in `--permission-mode plan` (requires user approval for file writes and shell commands).
+- Codex CLI runs with `--sandbox workspace-write` and `--ask-for-approval on-failure`.
+- `allowFrom` is fail-closed: an empty list blocks all users on Telegram/Discord.
+- Environment variables passed to child CLI processes are filtered (e.g., `CLAUDEPIPE_*` secrets are stripped).
+- Rate limiting is applied per sender (10 requests/minute) on Telegram and Discord.
+- Settings files are written with restrictive permissions (`0o600`).
 
-If you want safer behavior, explicitly override these:
+To switch to a more permissive mode at runtime, use the `/mode` admin command (see [Session & admin commands](#session--admin-commands)).
 
-- In `~/.claude-pipe/settings.json`, set `claudeCli.args` to remove dangerous Claude flags.
-- In env, set `CLAUDEPIPE_CODEX_ARGS` without dangerous Codex flags.
-- In env, tighten Codex policy with `CLAUDEPIPE_CODEX_APPROVAL_POLICY` and `CLAUDEPIPE_CODEX_SANDBOX`.
+## Discord setup guide
+
+### 1. Create a bot application
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Click **New Application** and give it a name.
+3. Go to **Bot** in the left menu.
+4. Scroll down to **Privileged Gateway Intents** and enable all three:
+   - **Presence Intent**
+   - **Server Members Intent**
+   - **Message Content Intent** (required for reading messages)
+5. Click **Save Changes**.
+6. Copy the bot token — you will need it during onboarding.
+
+### 2. Invite the bot to your server
+
+Using a dedicated server for the bot is recommended so conversations stay private.
+
+1. In the Developer Portal, go to **OAuth2** → **URL Generator**.
+2. Under **SCOPES**, check `bot`.
+3. Under **BOT PERMISSIONS**, check:
+   - Send Messages
+   - Read Message History
+   - View Channels
+4. Copy the generated URL and open it in your browser.
+5. Select the target server and authorize.
+
+### 3. Find your Discord user ID
+
+The onboarding wizard requires at least one user ID for `allowFrom`.
+
+1. Open Discord **Settings** → **Advanced** → enable **Developer Mode**.
+2. Right-click your username → **Copy User ID**.
+
+### 4. Remove the bot from a server
+
+To remove the bot from a server:
+
+1. Open the server and go to **Server Settings** → **Integrations**.
+2. Find the bot and click **Kick** or **Ban**.
+
+Alternatively, right-click the bot in the member list → **Kick**.
+
+## Session & admin commands
+
+| Command | Permission | Description |
+|---------|-----------|-------------|
+| `/reset` or `/new` | user | Clear conversation history and start a new session |
+| `/session_delete` | user | Delete the current session completely |
+| `/session_info` | user | Show current session info |
+| `/session_list` | admin | List all active sessions |
+| `/mode [plan\|bypassPermissions]` | admin | Show or switch Claude CLI permission mode |
+| `/help` | user | Show available commands |
+| `/ping` | user | Check if the bot is alive |
+| `/status` | user | Show bot status |
+
+## Running in the background
+
+To keep the bot running after closing the terminal:
+
+```bash
+cd claude-pipe
+nohup npm start > claude-pipe.log 2>&1 &
+```
+
+Useful commands:
+
+```bash
+# Follow the log output
+tail -f claude-pipe.log
+
+# Check if the bot is running
+pgrep -fa 'node dist/index.js'
+
+# Stop the bot
+kill $(pgrep -f 'node dist/index.js')
+```
 
 ## Development
 
