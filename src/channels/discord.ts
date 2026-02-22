@@ -1,10 +1,14 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   Client,
   GatewayIntentBits,
   Partials,
   REST,
   Routes,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Message
 } from 'discord.js'
@@ -14,7 +18,7 @@ import type { ClaudePipeConfig } from '../config/schema.js'
 import { MessageBus } from '../core/bus.js'
 import { retry } from '../core/retry.js'
 import { chunkText } from '../core/text-chunk.js'
-import type { InboundMessage, Logger, OutboundMessage } from '../core/types.js'
+import type { ApprovalDecision, InboundMessage, Logger, OutboundMessage } from '../core/types.js'
 import { RateLimiter } from '../core/rate-limiter.js'
 import { isSenderAllowed, type Channel } from './base.js'
 
@@ -29,6 +33,7 @@ export class DiscordChannel implements Channel {
   readonly name = 'discord' as const
   private client: Client | null = null
   private readonly rateLimiter = new RateLimiter(10, 60_000)
+  private approvalDispatcherRunning = false
 
   constructor(
     private readonly config: ClaudePipeConfig,
@@ -65,6 +70,10 @@ export class DiscordChannel implements Channel {
     })
 
     this.client.on('interactionCreate', async (interaction) => {
+      if (interaction.isButton()) {
+        await this.onButtonInteraction(interaction as ButtonInteraction)
+        return
+      }
       if (!interaction.isChatInputCommand()) return
       await this.onInteraction(interaction as ChatInputCommandInteraction)
     })
@@ -75,10 +84,15 @@ export class DiscordChannel implements Channel {
 
     await this.client.login(this.config.channels.discord.token)
     this.logger.info('channel.discord.start')
+
+    // Start background loop that picks up approval requests and sends buttons
+    this.approvalDispatcherRunning = true
+    void this.dispatchApprovalRequests()
   }
 
   /** Logs out and destroys the Discord client. */
   async stop(): Promise<void> {
+    this.approvalDispatcherRunning = false
     if (!this.client) return
     await this.client.destroy()
     this.client = null
@@ -242,6 +256,80 @@ export class DiscordChannel implements Channel {
     }
 
     await this.bus.publishInbound(inbound)
+  }
+
+  /** Background loop: consumes approval requests from the bus and sends button messages. */
+  private async dispatchApprovalRequests(): Promise<void> {
+    while (this.approvalDispatcherRunning) {
+      const req = await this.bus.consumeApprovalRequest()
+      if (req.channel !== 'discord') continue
+      await this.sendApprovalButtons(req)
+    }
+  }
+
+  /** Sends a message with Approve / Deny buttons for a plan. */
+  private async sendApprovalButtons(req: { id: string; chatId: string }): Promise<void> {
+    if (!this.client) return
+
+    const channel = await this.client.channels.fetch(req.chatId)
+    if (!channel?.isTextBased() || !('send' in channel) || typeof channel.send !== 'function') {
+      return
+    }
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`approve:${req.id}`)
+        .setLabel('Approve')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`deny:${req.id}`)
+        .setLabel('Deny')
+        .setStyle(ButtonStyle.Danger)
+    )
+
+    try {
+      await channel.send({
+        content: '**Execute this plan?**',
+        components: [row]
+      })
+    } catch (error) {
+      this.logger.error('channel.discord.approval_buttons_failed', {
+        chatId: req.chatId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  /** Handles Approve / Deny button clicks. */
+  private async onButtonInteraction(interaction: ButtonInteraction): Promise<void> {
+    const senderId = interaction.user.id
+    if (!isSenderAllowed(senderId, this.config.channels.discord.allowFrom)) {
+      await interaction.reply({ content: 'You are not authorized.', ephemeral: true })
+      return
+    }
+
+    const [action, requestId] = interaction.customId.split(':')
+    if (!action || !requestId || (action !== 'approve' && action !== 'deny')) return
+
+    const decision: ApprovalDecision = action === 'approve' ? 'approve' : 'deny'
+    const label = decision === 'approve' ? 'Approved' : 'Denied'
+
+    await interaction.update({
+      content: `**Plan ${label}** by <@${senderId}>`,
+      components: [] // Remove buttons after click
+    })
+
+    await this.bus.publishApprovalResult({
+      requestId,
+      decision,
+      responderId: senderId
+    })
+
+    this.logger.info('channel.discord.approval_response', {
+      requestId,
+      decision,
+      responderId: senderId
+    })
   }
 
   private isChannelAllowed(chatId: string): boolean {

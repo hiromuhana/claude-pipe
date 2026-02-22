@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto'
+
 import type { CommandHandler } from '../commands/handler.js'
 import type { ClaudePipeConfig } from '../config/schema.js'
 import { applySummaryTemplate } from './prompt-template.js'
 import { MessageBus } from './bus.js'
 import type { ModelClient } from './model-client.js'
-import type { AgentTurnUpdate, InboundMessage, Logger } from './types.js'
+import type { AgentTurnUpdate, ApprovalRequest, InboundMessage, Logger, ToolContext } from './types.js'
+
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 /**
  * Central message-processing loop.
@@ -126,12 +130,24 @@ export class AgentLoop {
       }
     }
 
-    const content = await this.client.runTurn(conversationKey, modelInput, {
+    const context: ToolContext = {
       workspace: this.config.workspace,
       channel: inbound.channel,
       chatId: inbound.chatId,
       onUpdate: publishProgress
-    })
+    }
+
+    // Use two-phase approval flow when the client supports it and channel is Discord
+    if (
+      inbound.channel === 'discord' &&
+      this.client.runPlanTurn &&
+      this.client.runExecuteTurn
+    ) {
+      await this.processTwoPhaseMessage(inbound, conversationKey, modelInput, context)
+      return
+    }
+
+    const content = await this.client.runTurn(conversationKey, modelInput, context)
 
     await this.bus.publishOutbound({
       channel: inbound.channel,
@@ -140,5 +156,101 @@ export class AgentLoop {
     })
 
     this.logger.info('agent.outbound', { conversationKey })
+  }
+
+  /**
+   * Two-phase plan→approve→execute flow for channels that support interactive approval (Discord).
+   */
+  private async processTwoPhaseMessage(
+    inbound: InboundMessage,
+    conversationKey: string,
+    modelInput: string,
+    context: ToolContext
+  ): Promise<void> {
+    // Phase 1: Run plan turn
+    const planResult = await this.client.runPlanTurn!(conversationKey, modelInput, context)
+
+    if (!planResult.hasPlan) {
+      // No write operations detected — send response directly
+      await this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: planResult.text
+      })
+      this.logger.info('agent.outbound', { conversationKey, phase: 'plan_only' })
+      return
+    }
+
+    // Plan detected: send plan text, then request approval
+    const approvalId = randomUUID()
+
+    await this.bus.publishOutbound({
+      channel: inbound.channel,
+      chatId: inbound.chatId,
+      content: planResult.text
+    })
+
+    const approvalRequest: ApprovalRequest = {
+      id: approvalId,
+      conversationKey,
+      planText: planResult.text,
+      createdAt: Date.now(),
+      channel: inbound.channel,
+      chatId: inbound.chatId,
+      senderId: inbound.senderId
+    }
+    await this.bus.publishApprovalRequest(approvalRequest)
+
+    this.logger.info('agent.approval_requested', {
+      conversationKey,
+      approvalId,
+      toolsUsed: planResult.toolsUsed
+    })
+
+    // Wait for user decision
+    const result = await this.bus.waitForApprovalResult(approvalId, APPROVAL_TIMEOUT_MS)
+
+    if (!result) {
+      await this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: 'Approval timed out (5 minutes). The plan was not executed. Send the request again to retry.'
+      })
+      this.logger.info('agent.approval_timeout', { conversationKey, approvalId })
+      return
+    }
+
+    if (result.decision === 'deny') {
+      const denyResponse = await this.client.runTurn(
+        conversationKey,
+        'The user has denied the plan. Do not make any changes. Acknowledge the denial briefly.',
+        context
+      )
+      await this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: denyResponse
+      })
+      this.logger.info('agent.approval_denied', { conversationKey, approvalId })
+      return
+    }
+
+    // Approved — execute with elevated permissions
+    this.logger.info('agent.approval_approved', { conversationKey, approvalId })
+
+    await this.bus.publishOutbound({
+      channel: inbound.channel,
+      chatId: inbound.chatId,
+      content: 'Approved! Executing the plan now...'
+    })
+
+    const executeResponse = await this.client.runExecuteTurn!(conversationKey, context)
+
+    await this.bus.publishOutbound({
+      channel: inbound.channel,
+      chatId: inbound.chatId,
+      content: executeResponse
+    })
+    this.logger.info('agent.outbound', { conversationKey, phase: 'execute' })
   }
 }

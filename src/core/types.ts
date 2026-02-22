@@ -66,3 +66,36 @@ export interface Logger {
   warn(event: string, data?: Record<string, unknown>): void
   error(event: string, data?: Record<string, unknown>): void
 }
+
+/**
+ * Pending approval request emitted by the agent loop when a plan is detected.
+ */
+export interface ApprovalRequest {
+  id: string
+  conversationKey: string
+  planText: string
+  createdAt: number
+  channel: ChannelName
+  chatId: string
+  senderId: string
+}
+
+export type ApprovalDecision = 'approve' | 'deny'
+
+/**
+ * Resolution of an approval request (user clicked a button or timed out).
+ */
+export interface ApprovalResult {
+  requestId: string
+  decision: ApprovalDecision
+  responderId: string
+}
+
+/**
+ * Rich return value from a plan-mode turn, carrying metadata for the approval flow.
+ */
+export interface TurnResult {
+  text: string
+  hasPlan: boolean
+  toolsUsed: string[]
+}

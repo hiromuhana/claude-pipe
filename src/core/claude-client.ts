@@ -7,7 +7,7 @@ import type { ClaudePipeConfig } from '../config/schema.js'
 import type { ModelClient } from './model-client.js'
 import { SessionStore } from './session-store.js'
 import { TranscriptLogger } from './transcript-logger.js'
-import type { AgentTurnUpdate, Logger, ToolContext } from './types.js'
+import type { AgentTurnUpdate, Logger, ToolContext, TurnResult } from './types.js'
 import { filterEnvForChild } from './env-filter.js'
 
 type JsonRecord = Record<string, unknown>
@@ -70,6 +70,28 @@ function summarizeToolResult(content: unknown): string {
   return 'tool returned result'
 }
 
+// ── Plan detection heuristic ──
+
+const WRITE_TOOLS = new Set([
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'Bash',
+  'NotebookEdit',
+  'TodoWrite'
+])
+
+const PLAN_PATTERNS = [
+  /I(?:'ll|'d like to| will| want to| need to| can)\s+(?:create|modify|write|update|delete|edit|add|remove|change|replace|run|execute|install)/i,
+  /(?:here(?:'s| is) (?:my |the )?plan|proposed changes|implementation plan|plan of action)/i,
+  /(?:step \d|phase \d|first,? I)/i
+]
+
+export function detectPlanInResponse(text: string, toolsUsed: string[]): boolean {
+  if (toolsUsed.some((t) => WRITE_TOOLS.has(t))) return true
+  return PLAN_PATTERNS.some((p) => p.test(text))
+}
+
 /**
  * Runs Claude Code through subprocess `stream-json` output and persists session IDs.
  */
@@ -102,16 +124,19 @@ export class ClaudeClient implements ModelClient {
   }
 
   /**
-   * Executes one turn by spawning the Claude CLI and parsing `stream-json` frames.
+   * Core subprocess execution. Spawns the Claude CLI, parses stream-json frames,
+   * and returns both the response text and metadata about tools used.
    */
-  async runTurn(
+  private async _executeTurn(
     conversationKey: string,
     userText: string,
-    context: ToolContext
-  ): Promise<string> {
+    context: ToolContext,
+    argsOverride?: string[]
+  ): Promise<{ text: string; toolsUsed: string[] }> {
     const savedSession = this.store.get(conversationKey)
     const executable = this.config.claudeCli?.command?.trim() || getClaudeCodeExecutablePath()
-    const args = [...(this.config.claudeCli?.args ?? defaultClaudeArgs), '--model', this.config.model]
+    const baseArgs = argsOverride ?? this.config.claudeCli?.args ?? defaultClaudeArgs
+    const args = [...baseArgs, '--model', this.config.model]
 
     if (savedSession?.sessionId) {
       args.push('--resume', savedSession.sessionId)
@@ -337,7 +362,10 @@ export class ClaudeClient implements ModelClient {
         conversationKey,
         message: 'Turn failed'
       })
-      return 'Sorry, I hit an error while processing that request.'
+      return {
+        text: 'Sorry, I hit an error while processing that request.',
+        toolsUsed: Array.from(new Set(toolNamesByCallId.values()))
+      }
     }
 
     if (observedSessionId) {
@@ -357,7 +385,85 @@ export class ClaudeClient implements ModelClient {
       message: 'Turn finished'
     })
 
-    return responseText || fallbackResultText || 'I completed processing but have no response to return.'
+    const text = responseText || fallbackResultText || 'I completed processing but have no response to return.'
+    return { text, toolsUsed: Array.from(new Set(toolNamesByCallId.values())) }
+  }
+
+  /**
+   * Executes one turn by spawning the Claude CLI and parsing `stream-json` frames.
+   */
+  async runTurn(
+    conversationKey: string,
+    userText: string,
+    context: ToolContext
+  ): Promise<string> {
+    const result = await this._executeTurn(conversationKey, userText, context)
+    return result.text
+  }
+
+  /**
+   * Runs a plan-mode turn and returns rich metadata for the approval flow.
+   */
+  async runPlanTurn(
+    conversationKey: string,
+    userText: string,
+    context: ToolContext
+  ): Promise<TurnResult> {
+    const result = await this._executeTurn(conversationKey, userText, context)
+    const hasPlan = detectPlanInResponse(result.text, result.toolsUsed)
+    return {
+      text: result.text,
+      hasPlan,
+      toolsUsed: result.toolsUsed
+    }
+  }
+
+  /**
+   * Executes the previously planned changes by temporarily switching to bypassPermissions.
+   */
+  async runExecuteTurn(
+    conversationKey: string,
+    context: ToolContext
+  ): Promise<string> {
+    const originalArgs = [...(this.config.claudeCli?.args ?? defaultClaudeArgs)]
+    try {
+      this.setPermissionMode('bypassPermissions')
+      const result = await this._executeTurn(
+        conversationKey,
+        'The user has approved the plan. Please proceed with implementing all the changes you described.',
+        context
+      )
+      return result.text
+    } finally {
+      // Restore original permission mode
+      if (this.config.claudeCli) {
+        this.config.claudeCli.args = originalArgs
+      }
+    }
+  }
+
+  /**
+   * Switches the CLI permission mode at runtime by mutating config args.
+   */
+  setPermissionMode(mode: 'plan' | 'bypassPermissions'): void {
+    if (!this.config.claudeCli) return
+    if (!this.config.claudeCli.args) {
+      this.config.claudeCli.args = [...defaultClaudeArgs]
+    }
+    const args = this.config.claudeCli.args
+    const modeIdx = args.indexOf('--permission-mode')
+    if (modeIdx >= 0 && modeIdx + 1 < args.length) {
+      args[modeIdx + 1] = mode
+    } else {
+      args.push('--permission-mode', mode)
+    }
+
+    const skipIdx = args.indexOf('--dangerously-skip-permissions')
+    if (mode === 'bypassPermissions' && skipIdx < 0) {
+      args.push('--dangerously-skip-permissions')
+    } else if (mode !== 'bypassPermissions' && skipIdx >= 0) {
+      args.splice(skipIdx, 1)
+    }
   }
 
   /** No-op in subprocess-per-turn mode. */
