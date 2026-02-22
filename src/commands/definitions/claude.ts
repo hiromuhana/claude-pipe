@@ -1,29 +1,4 @@
-import type { ChannelName } from '../../core/types.js'
 import type { CommandDefinition, CommandResult } from '../types.js'
-
-/**
- * /claude_ask <prompt>
- * Sends a prompt directly to Claude (convenience wrapper).
- */
-export function claudeAskCommand(
-  runTurn: (conversationKey: string, prompt: string, channel: ChannelName, chatId: string) => Promise<string>
-): CommandDefinition {
-  return {
-    name: 'claude_ask',
-    category: 'claude',
-    description: 'Send a prompt to Claude',
-    usage: '/claude_ask <prompt>',
-    aliases: ['ask'],
-    permission: 'user',
-    async execute(ctx): Promise<CommandResult> {
-      if (!ctx.rawArgs) {
-        return { content: 'Usage: /claude_ask <prompt>', error: true }
-      }
-      const reply = await runTurn(ctx.conversationKey, ctx.rawArgs, ctx.channel, ctx.chatId)
-      return { content: reply }
-    }
-  }
-}
 
 /**
  * /claude_model [model_name]

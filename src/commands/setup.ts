@@ -8,9 +8,10 @@ import {
   sessionDeleteCommand
 } from './definitions/session.js'
 import { helpCommand, statusCommand, pingCommand } from './definitions/utility.js'
-import { claudeAskCommand, claudeModelCommand } from './definitions/claude.js'
+import { claudeModelCommand } from './definitions/claude.js'
 import { configSetCommand, configGetCommand } from './definitions/config.js'
 import { modeCommand } from './definitions/mode.js'
+import { clearCommand, compactCommand } from './definitions/conversation.js'
 import { CommandHandler } from './handler.js'
 import { CommandRegistry } from './registry.js'
 import type { CommandDefinition } from './types.js'
@@ -64,15 +65,6 @@ export function setupCommands(
   registry.register(sessionDeleteCommand((key) => claude.startNewSession(key)))
 
   // --- Claude commands ---
-  registry.register(
-    claudeAskCommand(async (conversationKey, prompt, channel, chatId) =>
-      claude.runTurn(conversationKey, prompt, {
-        workspace: config.workspace,
-        channel,
-        chatId
-      })
-    )
-  )
   registry.register(claudeModelCommand(() => config.model))
 
   // --- Config commands ---
@@ -90,6 +82,20 @@ export function setupCommands(
       if (key) return mutableConfig[key]
       return { model: config.model, workspace: config.workspace, ...mutableConfig }
     })
+  )
+
+  // --- Conversation commands ---
+  registry.register(clearCommand((key) => claude.startNewSession(key)))
+  registry.register(
+    compactCommand(
+      (key) => claude.startNewSession(key),
+      async (conversationKey, prompt, channel, chatId) =>
+        claude.runTurn(conversationKey, prompt, {
+          workspace: config.workspace,
+          channel,
+          chatId
+        })
+    )
   )
 
   // --- Mode command ---

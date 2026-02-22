@@ -1,16 +1,24 @@
 import type { ClaudePipeConfig } from '../../config/schema.js'
+import type { PermissionMode } from '../../core/types.js'
 import type { CommandDefinition, CommandResult } from '../types.js'
 
-const VALID_MODES = ['plan', 'bypassPermissions'] as const
-type PermissionMode = (typeof VALID_MODES)[number]
+const VALID_MODES: readonly PermissionMode[] = ['plan', 'autoEditApprove', 'bypassPermissions']
 
-const MODE_LABELS: Record<PermissionMode, string> = {
-  plan: 'plan (read-only tools auto-approved, writes require confirmation)',
-  bypassPermissions: 'bypassPermissions (all tools auto-approved — USE WITH CAUTION)'
+/** Short aliases that users can type instead of the full mode name. */
+const MODE_ALIASES: Record<string, PermissionMode> = {
+  auto: 'autoEditApprove',
+  bypass: 'bypassPermissions'
 }
 
-function isValidMode(value: string): value is PermissionMode {
-  return (VALID_MODES as readonly string[]).includes(value)
+const MODE_LABELS: Record<PermissionMode, string> = {
+  plan: 'plan (all writes require approval)',
+  autoEditApprove: 'auto (file edits auto-approved, Bash requires approval)',
+  bypassPermissions: 'bypass (all tools auto-approved — USE WITH CAUTION)'
+}
+
+function resolveMode(value: string): PermissionMode | undefined {
+  if ((VALID_MODES as readonly string[]).includes(value)) return value as PermissionMode
+  return MODE_ALIASES[value.toLowerCase()]
 }
 
 function getCurrentMode(config: ClaudePipeConfig): string {
@@ -56,27 +64,28 @@ export function modeCommand(config: ClaudePipeConfig): CommandDefinition {
     name: 'mode',
     category: 'config',
     description: 'Show or switch Claude CLI permission mode',
-    usage: '/mode [plan|bypassPermissions]',
+    usage: '/mode [plan|auto|bypass]',
     aliases: [],
     permission: 'admin',
     async execute(ctx): Promise<CommandResult> {
       if (ctx.args.length === 0 || !ctx.args[0]) {
         const current = getCurrentMode(config)
-        const label = isValidMode(current) ? MODE_LABELS[current] : current
+        const resolved = resolveMode(current)
+        const label = resolved ? MODE_LABELS[resolved] : current
         return { content: `Current permission mode: **${label}**` }
       }
 
-      const requested = ctx.args[0]
-      if (!isValidMode(requested)) {
+      const resolved = resolveMode(ctx.args[0])
+      if (!resolved) {
         return {
-          content: `Invalid mode: \`${requested}\`\nValid modes: ${VALID_MODES.join(', ')}`,
+          content: `Invalid mode: \`${ctx.args[0]}\`\nValid modes: plan, auto, bypass`,
           error: true
         }
       }
 
-      setPermissionMode(config, requested)
+      setPermissionMode(config, resolved)
       return {
-        content: `Permission mode switched to: **${MODE_LABELS[requested]}**\nThis applies to new turns from this point.`
+        content: `Permission mode switched to: **${MODE_LABELS[resolved]}**\nThis applies to new turns from this point.`
       }
     }
   }

@@ -46,8 +46,9 @@ describe('setupCommands', () => {
     expect(names).toContain('session_list')
     expect(names).toContain('session_info')
     expect(names).toContain('session_delete')
-    expect(names).toContain('claude_ask')
     expect(names).toContain('claude_model')
+    expect(names).toContain('clear')
+    expect(names).toContain('compact')
     expect(names).toContain('config_set')
     expect(names).toContain('config_get')
     expect(names).toContain('status')
@@ -108,16 +109,16 @@ describe('setupCommands', () => {
 
     expect(handler.isCommand('/new')).toBe(true)
     expect(handler.isCommand('/reset')).toBe(true)
-    expect(handler.isCommand('/ask')).toBe(true)
+    expect(handler.isCommand('/cls')).toBe(true)
     expect(handler.isCommand('/model')).toBe(true)
   })
 
-  it('claude_ask command invokes claude.runTurn', async () => {
+  it('/clear command invokes claude.startNewSession', async () => {
     const deps = makeDeps()
     const { handler } = setupCommands(deps)
 
-    const result = await handler.execute('/claude_ask hello world', 'telegram', '42', 'admin1')
-    expect(result?.content).toBe('claude reply')
-    expect((deps.claude as any).runTurn).toHaveBeenCalled()
+    const result = await handler.execute('/clear', 'telegram', '42', 'admin1')
+    expect(result?.content).toBe('Conversation cleared.')
+    expect((deps.claude as any).startNewSession).toHaveBeenCalled()
   })
 })

@@ -7,7 +7,7 @@ import type { ClaudePipeConfig } from '../config/schema.js'
 import type { ModelClient } from './model-client.js'
 import { SessionStore } from './session-store.js'
 import { TranscriptLogger } from './transcript-logger.js'
-import type { AgentTurnUpdate, Logger, ToolContext, TurnResult } from './types.js'
+import type { AgentTurnUpdate, Logger, PermissionMode, PlanAction, ToolContext, TurnResult } from './types.js'
 import { filterEnvForChild } from './env-filter.js'
 
 type JsonRecord = Record<string, unknown>
@@ -73,15 +73,18 @@ function summarizeToolResult(content: unknown): string {
 
 // ── Plan detection heuristic ──
 
-const WRITE_TOOLS = new Set([
+const EDIT_TOOLS = new Set([
   'Write',
   'Edit',
   'MultiEdit',
-  'Bash',
   'NotebookEdit',
   'TodoWrite',
   'ExitPlanMode'
 ])
+
+const DANGEROUS_TOOLS = new Set(['Bash'])
+
+const WRITE_TOOLS = new Set([...EDIT_TOOLS, ...DANGEROUS_TOOLS])
 
 const PLAN_PATTERNS = [
   /I(?:'ll|'d like to| will| want to| need to| can)\s+(?:create|modify|write|update|delete|edit|add|remove|change|replace|run|execute|install)/i,
@@ -128,6 +131,43 @@ function formatInteractiveToolDetail(name: string, input?: Record<string, unknow
 export function detectPlanInResponse(text: string, toolsUsed: string[]): boolean {
   if (toolsUsed.some((t) => WRITE_TOOLS.has(t))) return true
   return PLAN_PATTERNS.some((p) => p.test(text))
+}
+
+/**
+ * Determines what action the agent loop should take after the plan phase,
+ * based on the detected tools and the current permission mode.
+ */
+export function getPlanAction(
+  text: string,
+  toolsUsed: string[],
+  mode: PermissionMode
+): PlanAction {
+  if (mode === 'bypassPermissions') return 'respond'
+
+  const hasWriteTools = toolsUsed.some((t) => WRITE_TOOLS.has(t))
+  const hasDangerousTools = toolsUsed.some((t) => DANGEROUS_TOOLS.has(t))
+  const hasTextPlan = PLAN_PATTERNS.some((p) => p.test(text))
+
+  if (mode === 'autoEditApprove') {
+    if (hasDangerousTools) return 'ask_approval'
+    if (hasWriteTools || hasTextPlan) return 'auto_execute'
+    return 'respond'
+  }
+
+  // plan mode: all writes need approval
+  if (hasWriteTools || hasTextPlan) return 'ask_approval'
+  return 'respond'
+}
+
+/**
+ * Reads the current permission mode from config CLI args.
+ */
+export function getCurrentPermissionMode(config: ClaudePipeConfig): PermissionMode {
+  const args = config.claudeCli?.args ?? []
+  const idx = args.indexOf('--permission-mode')
+  const raw = idx >= 0 && idx + 1 < args.length ? args[idx + 1] : undefined
+  if (raw === 'autoEditApprove' || raw === 'bypassPermissions') return raw
+  return 'plan'
 }
 
 /**
@@ -443,13 +483,18 @@ export class ClaudeClient implements ModelClient {
 
   /**
    * Runs a plan-mode turn and returns rich metadata for the approval flow.
+   *
+   * Always forces `--permission-mode plan` regardless of the user's current
+   * mode setting, so that Claude describes intended changes instead of executing them.
    */
   async runPlanTurn(
     conversationKey: string,
     userText: string,
     context: ToolContext
   ): Promise<TurnResult> {
-    const result = await this._executeTurn(conversationKey, userText, context)
+    // Force plan mode so Claude describes changes instead of executing them
+    const planArgs = [...defaultClaudeArgs]
+    const result = await this._executeTurn(conversationKey, userText, context, planArgs)
     const hasPlan = detectPlanInResponse(result.text, result.toolsUsed)
     return {
       text: result.text,
@@ -485,7 +530,7 @@ export class ClaudeClient implements ModelClient {
   /**
    * Switches the CLI permission mode at runtime by mutating config args.
    */
-  setPermissionMode(mode: 'plan' | 'bypassPermissions'): void {
+  setPermissionMode(mode: PermissionMode): void {
     if (!this.config.claudeCli) return
     if (!this.config.claudeCli.args) {
       this.config.claudeCli.args = [...defaultClaudeArgs]

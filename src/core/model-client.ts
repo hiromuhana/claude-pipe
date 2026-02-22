@@ -1,4 +1,4 @@
-import type { ToolContext, TurnResult } from './types.js'
+import type { PermissionMode, ToolContext, TurnResult } from './types.js'
 
 /**
  * Shared LLM runtime contract used by the agent loop and slash commands.
@@ -13,5 +13,5 @@ export interface ModelClient {
   /** Execute the previously planned changes with elevated permissions. */
   runExecuteTurn?(conversationKey: string, context: ToolContext): Promise<string>
   /** Switch the underlying CLI permission mode at runtime. */
-  setPermissionMode?(mode: 'plan' | 'bypassPermissions'): void
+  setPermissionMode?(mode: PermissionMode): void
 }

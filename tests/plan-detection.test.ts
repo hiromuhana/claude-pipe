@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectPlanInResponse } from '../src/core/claude-client.js'
+import { detectPlanInResponse, getPlanAction } from '../src/core/claude-client.js'
 
 describe('detectPlanInResponse', () => {
   it('returns true when write tools are used', () => {
@@ -37,5 +37,55 @@ describe('detectPlanInResponse', () => {
   it('returns false for similar but non-matching text', () => {
     expect(detectPlanInResponse('The file was already created.', [])).toBe(false)
     expect(detectPlanInResponse('This is a read-only operation.', [])).toBe(false)
+  })
+})
+
+describe('getPlanAction', () => {
+  describe('plan mode', () => {
+    it('returns ask_approval for any write tool', () => {
+      expect(getPlanAction('Done.', ['Edit'], 'plan')).toBe('ask_approval')
+      expect(getPlanAction('Done.', ['Bash'], 'plan')).toBe('ask_approval')
+      expect(getPlanAction('Done.', ['Write'], 'plan')).toBe('ask_approval')
+    })
+
+    it('returns ask_approval for plan text patterns', () => {
+      expect(getPlanAction("I'll create the file.", [], 'plan')).toBe('ask_approval')
+      expect(getPlanAction("Here's my plan:", [], 'plan')).toBe('ask_approval')
+    })
+
+    it('returns respond for read-only operations', () => {
+      expect(getPlanAction('Here is the content.', ['Read'], 'plan')).toBe('respond')
+      expect(getPlanAction('The answer is 42.', [], 'plan')).toBe('respond')
+    })
+  })
+
+  describe('autoEditApprove mode', () => {
+    it('returns auto_execute for edit-only tools', () => {
+      expect(getPlanAction('Done.', ['Edit'], 'autoEditApprove')).toBe('auto_execute')
+      expect(getPlanAction('Done.', ['Write'], 'autoEditApprove')).toBe('auto_execute')
+      expect(getPlanAction('Done.', ['NotebookEdit'], 'autoEditApprove')).toBe('auto_execute')
+    })
+
+    it('returns ask_approval when Bash is involved', () => {
+      expect(getPlanAction('Done.', ['Bash'], 'autoEditApprove')).toBe('ask_approval')
+      expect(getPlanAction('Done.', ['Edit', 'Bash'], 'autoEditApprove')).toBe('ask_approval')
+    })
+
+    it('returns auto_execute for plan text patterns without dangerous tools', () => {
+      expect(getPlanAction("I'll edit the file.", [], 'autoEditApprove')).toBe('auto_execute')
+    })
+
+    it('returns respond for read-only operations', () => {
+      expect(getPlanAction('Here is the content.', ['Read'], 'autoEditApprove')).toBe('respond')
+      expect(getPlanAction('The answer is 42.', [], 'autoEditApprove')).toBe('respond')
+    })
+  })
+
+  describe('bypassPermissions mode', () => {
+    it('always returns respond regardless of tools', () => {
+      expect(getPlanAction('Done.', ['Edit'], 'bypassPermissions')).toBe('respond')
+      expect(getPlanAction('Done.', ['Bash'], 'bypassPermissions')).toBe('respond')
+      expect(getPlanAction("I'll create the file.", [], 'bypassPermissions')).toBe('respond')
+    })
   })
 })

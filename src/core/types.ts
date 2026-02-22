@@ -84,6 +84,12 @@ export interface ApprovalRequest {
 
 export type ApprovalDecision = 'approve' | 'deny'
 
+/** Claude CLI permission modes supported by the two-phase approval flow. */
+export type PermissionMode = 'plan' | 'autoEditApprove' | 'bypassPermissions'
+
+/** Action to take after the plan phase in the two-phase flow. */
+export type PlanAction = 'respond' | 'auto_execute' | 'ask_approval'
+
 /**
  * Resolution of an approval request (user clicked a button or timed out).
  */

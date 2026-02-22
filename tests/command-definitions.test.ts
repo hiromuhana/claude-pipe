@@ -8,7 +8,6 @@ import {
   helpCommand,
   statusCommand,
   pingCommand,
-  claudeAskCommand,
   claudeModelCommand,
   configSetCommand,
   configGetCommand,
@@ -138,22 +137,6 @@ describe('Utility commands', () => {
 })
 
 describe('Claude commands', () => {
-  it('/claude_ask sends prompt and returns reply', async () => {
-    const runTurn = vi.fn(async () => 'Claude says hello')
-    const cmd = claudeAskCommand(runTurn)
-
-    const result = await cmd.execute(makeCtx({ rawArgs: 'hello world', args: ['hello', 'world'] }))
-    expect(result.content).toBe('Claude says hello')
-    expect(runTurn).toHaveBeenCalledWith('telegram:42', 'hello world', 'telegram', '42')
-  })
-
-  it('/claude_ask with no prompt returns usage error', async () => {
-    const cmd = claudeAskCommand(vi.fn())
-    const result = await cmd.execute(makeCtx())
-    expect(result.error).toBe(true)
-    expect(result.content).toContain('Usage')
-  })
-
   it('/claude_model with no args shows current model', async () => {
     const cmd = claudeModelCommand(() => 'claude-sonnet-4-5')
     const result = await cmd.execute(makeCtx())

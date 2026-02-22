@@ -5,6 +5,7 @@ import type { ClaudePipeConfig } from '../config/schema.js'
 import { applySummaryTemplate } from './prompt-template.js'
 import { MessageBus } from './bus.js'
 import type { ModelClient } from './model-client.js'
+import { getCurrentPermissionMode, getPlanAction } from './claude-client.js'
 import type { AgentTurnUpdate, ApprovalRequest, InboundMessage, Logger, ToolContext } from './types.js'
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
@@ -166,12 +167,14 @@ export class AgentLoop {
     }
 
     // Use two-phase approval flow when the client supports it and channel is Discord
+    const mode = getCurrentPermissionMode(this.config)
     if (
       inbound.channel === 'discord' &&
+      mode !== 'bypassPermissions' &&
       this.client.runPlanTurn &&
       this.client.runExecuteTurn
     ) {
-      await this.processTwoPhaseMessage(inbound, conversationKey, modelInput, context)
+      await this.processTwoPhaseMessage(inbound, conversationKey, modelInput, context, mode)
       return
     }
 
@@ -190,19 +193,26 @@ export class AgentLoop {
 
   /**
    * Two-phase plan→approve→execute flow for channels that support interactive approval (Discord).
+   *
+   * Behavior depends on the current permission mode:
+   * - `plan`: all write operations require explicit approval
+   * - `autoEditApprove`: file edits auto-execute, only Bash needs approval
    */
   private async processTwoPhaseMessage(
     inbound: InboundMessage,
     conversationKey: string,
     modelInput: string,
-    context: ToolContext
+    context: ToolContext,
+    mode: 'plan' | 'autoEditApprove'
   ): Promise<void> {
-    // Phase 1: Run plan turn
+    // Phase 1: Run plan turn (always forces --permission-mode plan internally)
     const planResult = await this.withHeartbeat(inbound, () =>
       this.client.runPlanTurn!(conversationKey, modelInput, context)
     )
 
-    if (!planResult.hasPlan) {
+    const action = getPlanAction(planResult.text, planResult.toolsUsed, mode)
+
+    if (action === 'respond') {
       // No write operations detected — send response directly
       await this.bus.publishOutbound({
         channel: inbound.channel,
@@ -213,7 +223,34 @@ export class AgentLoop {
       return
     }
 
-    // Plan detected: send plan text, then request approval
+    if (action === 'auto_execute') {
+      // autoEditApprove mode: edits only, no dangerous tools — execute without asking
+      await this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: planResult.text
+      })
+
+      this.logger.info('agent.auto_execute', {
+        conversationKey,
+        toolsUsed: planResult.toolsUsed,
+        mode
+      })
+
+      const executeResponse = await this.withHeartbeat(inbound, () =>
+        this.client.runExecuteTurn!(conversationKey, context)
+      )
+
+      await this.bus.publishOutbound({
+        channel: inbound.channel,
+        chatId: inbound.chatId,
+        content: executeResponse
+      })
+      this.logger.info('agent.outbound', { conversationKey, phase: 'auto_execute' })
+      return
+    }
+
+    // action === 'ask_approval': send plan text and request approval via buttons
     const approvalId = randomUUID()
 
     await this.bus.publishOutbound({
