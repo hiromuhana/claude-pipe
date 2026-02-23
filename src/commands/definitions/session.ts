@@ -1,6 +1,31 @@
 import type { CommandDefinition, CommandContext, CommandResult } from '../types.js'
 
 /**
+ * Formats a conversation key like "discord:12345" into a readable label.
+ */
+function formatKey(key: string): string {
+  const [channel, id] = key.split(':', 2)
+  if (!channel || !id) return key
+  return `${channel} #${id.length > 8 ? id.slice(-8) : id}`
+}
+
+/**
+ * Formats an ISO timestamp as a relative time string (e.g. "2h ago").
+ */
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 0) return 'just now'
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+/**
  * /new  (aliases: /newsession, /new_session, /reset, /reset_session, /session_new)
  * Starts a fresh Claude session for the current chat.
  */
@@ -40,9 +65,9 @@ export function sessionListCommand(
         return { content: 'No active sessions.' }
       }
       const lines = sessions.map((s, i) => {
-        const topic = s.topic ? `"${s.topic}"` : '(no topic)'
-        const time = s.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '')
-        return `${i + 1}. \`${s.key}\`\n   ${topic} — ${time}`
+        const label = s.topic ? `"${s.topic}"` : formatKey(s.key)
+        const time = formatRelativeTime(s.updatedAt)
+        return `${i + 1}. ${label}  _(${time})_`
       })
       return { content: `**Active sessions (${sessions.length}):**\n${lines.join('\n')}` }
     }
@@ -67,7 +92,7 @@ export function sessionInfoCommand(
       if (!session) {
         return { content: 'No active session for this chat.' }
       }
-      const time = session.updatedAt.replace('T', ' ').replace(/\.\d+Z$/, '')
+      const time = formatRelativeTime(session.updatedAt)
       const lines = [
         '**Session info:**',
         `• Topic: ${session.topic ? `"${session.topic}"` : '(none)'}`,

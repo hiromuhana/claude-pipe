@@ -9,7 +9,6 @@ import { getCurrentPermissionMode, getPlanAction } from './claude-client.js'
 import type { AgentTurnUpdate, ApprovalRequest, InboundMessage, Logger, ToolContext } from './types.js'
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
-const HEARTBEAT_INTERVAL_MS = 30_000 // 30 seconds
 
 /**
  * Central message-processing loop.
@@ -28,29 +27,6 @@ export class AgentLoop {
     private readonly client: ModelClient,
     private readonly logger: Logger
   ) {}
-
-  /**
-   * Runs a long-running async function while periodically sending a heartbeat
-   * message to the channel so the user knows the bot is still working.
-   */
-  private async withHeartbeat<T>(
-    inbound: InboundMessage,
-    fn: () => Promise<T>
-  ): Promise<T> {
-    const timer = setInterval(() => {
-      void this.bus.publishOutbound({
-        channel: inbound.channel,
-        chatId: inbound.chatId,
-        content: '_Still working..._'
-      })
-    }, HEARTBEAT_INTERVAL_MS)
-
-    try {
-      return await fn()
-    } finally {
-      clearInterval(timer)
-    }
-  }
 
   /** Attaches a command handler for slash-command interception. */
   setCommandHandler(handler: CommandHandler): void {
@@ -178,9 +154,7 @@ export class AgentLoop {
       return
     }
 
-    const content = await this.withHeartbeat(inbound, () =>
-      this.client.runTurn(conversationKey, modelInput, context)
-    )
+    const content = await this.client.runTurn(conversationKey, modelInput, context)
 
     await this.bus.publishOutbound({
       channel: inbound.channel,
@@ -205,10 +179,8 @@ export class AgentLoop {
     context: ToolContext,
     mode: 'plan' | 'autoEditApprove'
   ): Promise<void> {
-    // Phase 1: Run plan turn (always forces --permission-mode plan internally)
-    const planResult = await this.withHeartbeat(inbound, () =>
-      this.client.runPlanTurn!(conversationKey, modelInput, context)
-    )
+    // Phase 1: Run first-phase turn with the appropriate permission mode
+    const planResult = await this.client.runPlanTurn!(conversationKey, modelInput, context, mode)
 
     const action = getPlanAction(planResult.text, planResult.toolsUsed, mode)
 
@@ -224,27 +196,11 @@ export class AgentLoop {
     }
 
     if (action === 'auto_execute') {
-      // autoEditApprove mode: edits only, no dangerous tools — execute without asking
+      // autoEditApprove mode: edits already executed in Phase 1 — just send the result
       await this.bus.publishOutbound({
         channel: inbound.channel,
         chatId: inbound.chatId,
         content: planResult.text
-      })
-
-      this.logger.info('agent.auto_execute', {
-        conversationKey,
-        toolsUsed: planResult.toolsUsed,
-        mode
-      })
-
-      const executeResponse = await this.withHeartbeat(inbound, () =>
-        this.client.runExecuteTurn!(conversationKey, context)
-      )
-
-      await this.bus.publishOutbound({
-        channel: inbound.channel,
-        chatId: inbound.chatId,
-        content: executeResponse
       })
       this.logger.info('agent.outbound', { conversationKey, phase: 'auto_execute' })
       return
@@ -313,9 +269,7 @@ export class AgentLoop {
       content: 'Approved! Executing the plan now...'
     })
 
-    const executeResponse = await this.withHeartbeat(inbound, () =>
-      this.client.runExecuteTurn!(conversationKey, context)
-    )
+    const executeResponse = await this.client.runExecuteTurn!(conversationKey, context)
 
     await this.bus.publishOutbound({
       channel: inbound.channel,

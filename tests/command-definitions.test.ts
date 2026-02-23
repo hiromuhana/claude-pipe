@@ -44,18 +44,17 @@ describe('Session commands', () => {
 
     const result = await cmd.execute(makeCtx())
     expect(result.content).toContain('Active sessions (1)')
-    expect(result.content).toContain('telegram:42')
     expect(result.content).toContain('"Fix login bug"')
-    expect(result.content).toContain('2025-01-01 00:00:00')
+    expect(result.content).toContain('ago')
   })
 
-  it('/session_list shows (no topic) when topic is missing', async () => {
+  it('/session_list shows channel label when topic is missing', async () => {
     const cmd = sessionListCommand(() => [
       { key: 'telegram:42', updatedAt: '2025-01-01T00:00:00.000Z' }
     ])
 
     const result = await cmd.execute(makeCtx())
-    expect(result.content).toContain('(no topic)')
+    expect(result.content).toContain('telegram #42')
   })
 
   it('/session_list returns empty message when no sessions', async () => {
@@ -75,7 +74,7 @@ describe('Session commands', () => {
     expect(result.content).toContain('sess-abc')
     expect(result.content).toContain('Session info')
     expect(result.content).toContain('"Add auth feature"')
-    expect(result.content).toContain('2025-01-01 00:00:00')
+    expect(result.content).toContain('ago')
   })
 
   it('/session_info returns no-session message', async () => {

@@ -493,19 +493,25 @@ export class ClaudeClient implements ModelClient {
   }
 
   /**
-   * Runs a plan-mode turn and returns rich metadata for the approval flow.
+   * Runs the first-phase turn and returns rich metadata for the approval flow.
    *
-   * Always forces `--permission-mode plan` regardless of the user's current
-   * mode setting, so that Claude describes intended changes instead of executing them.
+   * When mode is `plan`, forces `--permission-mode plan` so Claude only describes
+   * intended changes. When mode is `autoEditApprove`, uses that mode so Claude
+   * can directly execute file edits while Bash is still blocked.
    */
   async runPlanTurn(
     conversationKey: string,
     userText: string,
-    context: ToolContext
+    context: ToolContext,
+    mode: PermissionMode = 'plan'
   ): Promise<TurnResult> {
-    // Force plan mode so Claude describes changes instead of executing them
-    const planArgs = [...defaultClaudeArgs]
-    const result = await this._executeTurn(conversationKey, userText, context, planArgs)
+    const phaseArgs = [...defaultClaudeArgs]
+    // Override the permission-mode value in the default args
+    const modeIdx = phaseArgs.indexOf('--permission-mode')
+    if (modeIdx >= 0 && modeIdx + 1 < phaseArgs.length) {
+      phaseArgs[modeIdx + 1] = mode
+    }
+    const result = await this._executeTurn(conversationKey, userText, context, phaseArgs)
     const hasPlan = detectPlanInResponse(result.text, result.toolsUsed)
     return {
       text: result.text,

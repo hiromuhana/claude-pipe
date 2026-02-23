@@ -8,8 +8,8 @@ export interface ModelClient {
   closeAll(): void
   startNewSession(conversationKey: string): Promise<void>
 
-  /** Run a plan-mode turn that returns rich metadata for the approval flow. */
-  runPlanTurn?(conversationKey: string, userText: string, context: ToolContext): Promise<TurnResult>
+  /** Run a plan/first-phase turn that returns rich metadata for the approval flow. */
+  runPlanTurn?(conversationKey: string, userText: string, context: ToolContext, mode?: PermissionMode): Promise<TurnResult>
   /** Execute the previously planned changes with elevated permissions. */
   runExecuteTurn?(conversationKey: string, context: ToolContext): Promise<string>
   /** Switch the underlying CLI permission mode at runtime. */
